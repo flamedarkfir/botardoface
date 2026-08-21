@@ -9,18 +9,18 @@
     --header-height: 70px;
     --primary: #1a2332;
     --primary-light: #2c3e50;
-    --bg-main: #f0f2f5;
-    --card-bg: rgba(255, 255, 255, 0.85);
+    --bg-main: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+    --card-bg: rgba(255, 255, 255, 0.7);
     --text-primary: #1a2332;
     --text-secondary: #4a5a6e;
     --border-color: rgba(0, 0, 0, 0.06);
-    --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-    --radius: 16px;
+    --shadow: 0 8px 40px rgba(0, 0, 0, 0.06);
+    --radius: 20px;
     --transition: all 0.3s ease;
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    font-family: Arial, Helvetica, sans-serif;
     background: var(--bg-main);
     color: var(--text-primary);
     min-height: 100vh;
@@ -142,7 +142,7 @@ body {
 }
 
 .dashboard-header {
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.5);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     padding: 0 2rem;
@@ -150,10 +150,13 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid var(--border-color);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
     position: sticky;
-    top: 0;
+    top: 12px;
     z-index: 100;
+    margin: 12px 1.5rem 0;
 }
 
 .header-left {
@@ -1718,6 +1721,9 @@ body {
     .dashboard-header {
         padding: 0 1rem;
         height: 60px;
+        margin: 8px 0.8rem 0;
+        border-radius: 12px;
+        top: 8px;
     }
 
     .header-search input {

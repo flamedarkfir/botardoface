@@ -89,20 +89,21 @@
 
         <section id="section-panel" class="dashboard-section active">
             <div class="stats-grid">
-                <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-user-check"></i></div><div class="stat-info"><span class="stat-value" id="totalReconocimientos">0</span><span class="stat-label">Reconocimientos</span></div><div class="stat-change positive"><i class="fas fa-arrow-up"></i> 12%</div></div>
-                <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="totalUsuarios">0</span><span class="stat-label">Usuarios activos</span></div><div class="stat-change positive"><i class="fas fa-arrow-up"></i> 5%</div></div>
-                <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-clock"></i></div><div class="stat-info"><span class="stat-value" id="tiempoPromedio">2.4s</span><span class="stat-label">Tiempo promedio</span></div><div class="stat-change negative"><i class="fas fa-arrow-down"></i> 0.3s</div></div>
-                <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-percent"></i></div><div class="stat-info"><span class="stat-value" id="tasaPrecision">98.7%</span><span class="stat-label">Precisión</span></div><div class="stat-change positive"><i class="fas fa-arrow-up"></i> 0.5%</div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-user-check"></i></div><div class="stat-info"><span class="stat-value" id="totalReconocimientos">0</span><span class="stat-label">Reconocimientos</span></div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="totalUsuarios">0</span><span class="stat-label">Usuarios activos</span></div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-clock"></i></div><div class="stat-info"><span class="stat-value" id="tiempoPromedio">0.0s</span><span class="stat-label">Tiempo promedio</span></div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-percent"></i></div><div class="stat-info"><span class="stat-value" id="tasaPrecision">0.0%</span><span class="stat-label">Precisión</span></div></div>
             </div>
             <div class="panel-grid">
                 <div class="panel-card full-width">
                     <div class="panel-card-header"><h3><i class="fas fa-chart-line"></i> Actividad reciente</h3><a href="#historial" class="view-all">Ver todos</a></div>
                     <div class="panel-card-body">
                         <div class="activity-timeline" id="activityTimeline">
-                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p><strong>Juan Pérez</strong> fue reconocido exitosamente</p><span class="activity-time">Hace 5 minutos</span></div></div>
-                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p>Nuevo usuario <strong>María García</strong> registrado</p><span class="activity-time">Hace 1 hora</span></div></div>
-                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p>Sistema actualizado exitosamente a la versión 2.0</p><span class="activity-time">Hace 3 horas</span></div></div>
-                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p><strong>Carlos López</strong> fue reconocido exitosamente</p><span class="activity-time">Hace 5 horas</span></div></div>
+                            <div class="empty-posts">
+                                <i class="fas fa-clock-rotate-left"></i>
+                                <p>No hay actividad reciente</p>
+                                <p style="font-size:0.8rem;">Aquí aparecerán los últimos eventos del sistema</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -127,7 +128,7 @@
                         </div>
                         <div class="profile-badge">
                             <span class="badge-role">🎓 Alumno</span>
-                            <span class="badge-since">Desde 2024</span>
+                            <span class="badge-since">Nuevo miembro</span>
                         </div>
                     </div>
 
@@ -138,7 +139,7 @@
                                 <h3>Acerca de mí</h3>
                                 <button class="btn-edit-bio" id="editBioBtn"><i class="fas fa-edit"></i></button>
                             </div>
-                            <p id="profileBio" class="bio-text">Estudiante apasionado por la tecnología y el desarrollo de proyectos innovadores. 🚀</p>
+                            <p id="profileBio" class="bio-text">Aún no has agregado una descripción.</p>
                             <div class="bio-edit" id="bioEdit" style="display:none;">
                                 <textarea id="bioTextarea" rows="3" placeholder="Escribe algo sobre ti..."></textarea>
                                 <div class="bio-actions">

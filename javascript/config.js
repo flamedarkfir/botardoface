@@ -3,7 +3,7 @@
 
     // ===== PERFIL REDES SOCIALES =====
     let posts = [];
-    let bioText = 'Estudiante apasionado por la tecnología y el desarrollo de proyectos innovadores. 🚀';
+    let bioText = 'Aún no has agregado una descripción.';
     let statusEmoji = '😊';
 
     function cargarPerfil() {
@@ -89,7 +89,7 @@
     function actualizarStats() {
         document.getElementById('postCount').textContent = posts.length;
         document.getElementById('classCount').textContent = clases.length;
-        document.getElementById('friendCount').textContent = Math.floor(Math.random() * 20) + 5;
+        document.getElementById('friendCount').textContent = 0;
     }
 
     function agregarPost(texto) {
@@ -194,16 +194,7 @@
     };
 
     const proyectos = [
-        { nombre: 'camara', icono: 'fa-camera', descripcion: 'Reconocimiento facial en tiempo real' },
-        { nombre: 'login', icono: 'fa-right-to-bracket', descripcion: 'Sistema de autenticación' },
-        { nombre: 'dashboard', icono: 'fa-gauge-high', descripcion: 'Panel de control' },
-        { nombre: 'reconocimiento', icono: 'fa-face-smile', descripcion: 'Detección de rostros' },
-        { nombre: 'entrenamiento', icono: 'fa-brain', descripcion: 'Entrenamiento de modelos' },
-        { nombre: 'api', icono: 'fa-cloud', descripcion: 'API de reconocimiento' },
-        { nombre: 'face-detection', icono: 'fa-vector-square', descripcion: 'Detección facial avanzada' },
-        { nombre: 'live-stream', icono: 'fa-broadcast', descripcion: 'Streaming en vivo' },
-        { nombre: 'model-trainer', icono: 'fa-robot', descripcion: 'Entrenador de modelos' },
-        { nombre: 'image-processor', icono: 'fa-image', descripcion: 'Procesamiento de imágenes' }
+        { nombre: 'camara', icono: 'fa-camera', descripcion: 'Reconocimiento facial en tiempo real' }
     ];
 
     const materiasDisponibles = [
@@ -266,10 +257,10 @@
     const tasaPrecision = document.getElementById('tasaPrecision');
 
     let recognitionCount = 0;
-    let userCount = 32;
-    let precisionValue = 98.7;
-    let tiempoValue = 2.4;
-    let reconocimientosPorSegundo = 0.3;
+    let userCount = 0;
+    let precisionValue = 0;
+    let tiempoValue = 0;
+    let reconocimientosPorSegundo = 0;
     let lastUpdateTime = Date.now();
     let precisionDirection = 1;
     let tiempoDirection = 1;
@@ -338,10 +329,6 @@
 
         document.getElementById('userNameDisplay').textContent = name;
         document.getElementById('profileName').textContent = name;
-        document.getElementById('profileEmail').textContent = email;
-        editName.value = name;
-        editEmail.value = email;
-        editPhone.value = phone;
         document.querySelector('.user-role').textContent = 'Alumno';
     }
 
@@ -573,6 +560,7 @@
         const overlay = document.getElementById('modalOverlay');
         if (!overlay) {
             crearModal();
+            abrirModal(clase);
             return;
         }
 
@@ -1081,12 +1069,6 @@
 
         updateCameraStatus(false, 'Desconectada');
 
-        recognitionCount = 127;
-        userCount = 32;
-        precisionValue = 98.7;
-        tiempoValue = 2.4;
-        lastUpdateTime = Date.now();
-
         const hash = window.location.hash.replace('#', '');
         if (hash) {
             const sectionMap = {
@@ -1102,11 +1084,6 @@
             if (target) navigateTo(target);
         }
 
-        function statsLoop() {
-            updateStats();
-            requestAnimationFrame(statsLoop);
-        }
-        requestAnimationFrame(statsLoop);
     }
 
     let resizeTimer;
