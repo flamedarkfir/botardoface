@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard - Botardo Face</title>
+    <link rel="stylesheet" href="../css/dashboard.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+</head>
+<body>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <img src="../recourses/images/P/logo.webp" alt="Botardo Face" />
+            <span>Botardo Face</span>
+        </div>
+        <nav class="sidebar-nav">
+            <ul>
+                <li class="active"><a href="#panel" data-section="panel"><i class="fas fa-th-large"></i><span>Panel</span></a></li>
+                <li><a href="#perfil" data-section="perfil"><i class="fas fa-user"></i><span>Perfil</span></a></li>
+                <li><a href="#clases" data-section="clases"><i class="fas fa-chalkboard-user"></i><span>Clases</span></a></li>
+                <li><a href="#camara" data-section="camara"><i class="fas fa-camera"></i><span>Cámara</span></a></li>
+                <li><a href="#proyectos" data-section="proyectos"><i class="fas fa-folder-open"></i><span>Proyectos</span></a></li>
+                <li><a href="#estadisticas" data-section="estadisticas"><i class="fas fa-chart-bar"></i><span>Estadísticas</span></a></li>
+                <li><a href="#configuracion" data-section="configuracion"><i class="fas fa-gear"></i><span>Configuración</span></a></li>
+            </ul>
+        </nav>
+        <div class="sidebar-footer">
+            <button id="logoutBtn" class="logout-btn"><i class="fas fa-right-from-bracket"></i><span>Cerrar sesión</span></button>
+        </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main-content">
+
+        <!-- HEADER -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
+                <h1 id="pageTitle">Panel</h1>
+            </div>
+            <div class="header-right">
+                <div class="header-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" placeholder="Buscar..." id="searchInput" />
+                </div>
+                <div class="header-notifications">
+                    <button class="notif-btn" id="notifBtn"><i class="fas fa-bell"></i><span class="notif-badge">3</span></button>
+                    <div class="notif-dropdown" id="notifDropdown">
+                        <div class="notif-header"><span>Notificaciones</span><button class="notif-mark-all">Marcar todas</button></div>
+                        <ul class="notif-list">
+                            <li class="notif-item unread"><i class="fas fa-face-smile"></i><div><p>Nuevo reconocimiento exitoso</p><span>Hace 5 min</span></div></li>
+                            <li class="notif-item unread"><i class="fas fa-user-plus"></i><div><p>Usuario registrado: Juan Pérez</p><span>Hace 1 hora</span></div></li>
+                            <li class="notif-item"><i class="fas fa-arrow-up"></i><div><p>Sistema actualizado a v2.0</p><span>Hace 3 horas</span></div></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="header-user">
+                    <img src="../recourses/images/S/notfound.webp" alt="Usuario" id="userAvatar" />
+                    <div class="user-info"><span class="user-name" id="userNameDisplay">Usuario</span><span class="user-role">Administrador</span></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- SECCIONES -->
+        <!-- PANEL -->
+        <section id="section-panel" class="dashboard-section active">
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-user-check"></i></div><div class="stat-info"><span class="stat-value" id="totalReconocimientos">0</span><span class="stat-label">Reconocimientos</span></div><div class="stat-change positive"><i class="fas fa-arrow-up"></i> 12%</div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="totalUsuarios">0</span><span class="stat-label">Usuarios activos</span></div><div class="stat-change positive"><i class="fas fa-arrow-up"></i> 5%</div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-clock"></i></div><div class="stat-info"><span class="stat-value" id="tiempoPromedio">2.4s</span><span class="stat-label">Tiempo promedio</span></div><div class="stat-change negative"><i class="fas fa-arrow-down"></i> 0.3s</div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-percent"></i></div><div class="stat-info"><span class="stat-value" id="tasaPrecision">98.7%</span><span class="stat-label">Precisión</span></div><div class="stat-change positive"><i class="fas fa-arrow-up"></i> 0.5%</div></div>
+            </div>
+            <div class="panel-grid">
+                <div class="panel-card full-width">
+                    <div class="panel-card-header"><h3><i class="fas fa-chart-line"></i> Actividad reciente</h3><a href="#historial" class="view-all">Ver todos</a></div>
+                    <div class="panel-card-body">
+                        <div class="activity-timeline" id="activityTimeline">
+                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p><strong>Juan Pérez</strong> fue reconocido exitosamente</p><span class="activity-time">Hace 5 minutos</span></div></div>
+                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p>Nuevo usuario <strong>María García</strong> registrado</p><span class="activity-time">Hace 1 hora</span></div></div>
+                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p>Sistema actualizado exitosamente a la versión 2.0</p><span class="activity-time">Hace 3 horas</span></div></div>
+                            <div class="activity-item"><div class="activity-dot"></div><div class="activity-content"><p><strong>Carlos López</strong> fue reconocido exitosamente</p><span class="activity-time">Hace 5 horas</span></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PERFIL -->
+        <section id="section-perfil" class="dashboard-section">
+            <div class="profile-container">
+                <div class="profile-card">
+                    <div class="profile-header">
+                        <div class="profile-avatar">
+                            <img src="../recourses/images/S/notfound.webp" alt="Avatar" id="profileAvatar" />
+                            <button class="avatar-edit"><i class="fas fa-camera"></i></button>
+                        </div>
+                        <div class="profile-info">
+                            <h2 id="profileName">Usuario</h2>
+                            <p class="profile-email" id="profileEmail">usuario@ejemplo.com</p>
+                            <span class="profile-role">Administrador</span>
+                        </div>
+                    </div>
+                    <div class="profile-body">
+                        <div class="profile-form">
+                            <div class="form-group"><label>Nombres completos</label><input type="text" value="Usuario" id="editName" /></div>
+                            <div class="form-group"><label>Correo electrónico</label><input type="email" value="usuario@ejemplo.com" id="editEmail" /></div>
+                            <div class="form-group"><label>Teléfono</label><input type="text" value="+57 300 000 0000" id="editPhone" /></div>
+                            <div class="form-group"><label>Rol</label><input type="text" value="Administrador" disabled /></div>
+                            <button class="btn btn-primary" id="saveProfileBtn"><i class="fas fa-save"></i> Guardar cambios</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CLASES -->
+        <section id="section-clases" class="dashboard-section">
+            <div class="classes-container">
+                <div class="classes-header"><h2><i class="fas fa-chalkboard-user"></i> Mis Clases</h2><button class="btn btn-primary"><i class="fas fa-plus"></i> Nueva clase</button></div>
+                <div class="classes-grid">
+                    <div class="class-card"><div class="class-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-users"></i></div><div class="class-info"><h3>Reconocimiento Facial</h3><p>12 estudiantes · 3 proyectos</p></div><div class="class-status active">Activa</div></div>
+                    <div class="class-card"><div class="class-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-robot"></i></div><div class="class-info"><h3>IA para Principiantes</h3><p>8 estudiantes · 2 proyectos</p></div><div class="class-status active">Activa</div></div>
+                    <div class="class-card"><div class="class-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-code"></i></div><div class="class-info"><h3>Desarrollo Web</h3><p>15 estudiantes · 5 proyectos</p></div><div class="class-status inactive">Inactiva</div></div>
+                    <div class="class-card"><div class="class-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-database"></i></div><div class="class-info"><h3>Bases de Datos</h3><p>10 estudiantes · 2 proyectos</p></div><div class="class-status active">Activa</div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CÁMARA -->
+        <section id="section-camara" class="dashboard-section">
+            <div class="camera-container">
+                <div class="camera-card">
+                    <div class="camera-header">
+                        <h2><i class="fas fa-camera"></i> Reconocimiento Facial</h2>
+                        <div class="camera-status" id="cameraStatus"><span class="status-dot active"></span><span>En línea</span></div>
+                    </div>
+                    <div class="camera-body">
+                        <div class="video-container" id="videoContainer">
+                            <video id="videoFeed" autoplay playsinline></video>
+                            <canvas id="overlayCanvas"></canvas>
+                            <div class="video-placeholder" id="videoPlaceholder"><i class="fas fa-camera"></i><p>Haz clic en "Iniciar cámara" para comenzar</p></div>
+                        </div>
+                        <div class="camera-controls">
+                            <button class="btn btn-primary" id="startCameraBtn"><i class="fas fa-play"></i> Iniciar cámara</button>
+                            <button class="btn btn-success" id="captureBtn" disabled><i class="fas fa-camera"></i> Capturar</button>
+                            <button class="btn btn-secondary" id="switchCameraBtn" disabled><i class="fas fa-rotate"></i> Cambiar cámara</button>
+                        </div>
+                        <div class="camera-result" id="cameraResult" style="display:none;">
+                            <h4>Resultado del reconocimiento</h4>
+                            <div class="result-content"><i class="fas fa-face-smile"></i><span>Rostro detectado correctamente</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PROYECTOS -->
+        <section id="section-proyectos" class="dashboard-section">
+            <div class="projects-container">
+                <div class="projects-header"><h2><i class="fas fa-folder-open"></i> Proyectos</h2><button class="btn btn-primary" id="newProjectBtn"><i class="fas fa-plus"></i> Nuevo proyecto</button></div>
+                <div class="projects-grid" id="projectsGrid">
+                    <!-- Los proyectos se generan desde config.js -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ESTADÍSTICAS -->
+        <section id="section-estadisticas" class="dashboard-section">
+            <div class="stats-container">
+                <h2><i class="fas fa-chart-bar"></i> Estadísticas</h2>
+                <div class="stats-charts">
+                    <div class="chart-card"><h3>Reconocimientos por día</h3><div class="chart-placeholder"><i class="fas fa-chart-line"></i><p>Gráfico de actividad</p></div></div>
+                    <div class="chart-card"><h3>Distribución de usuarios</h3><div class="chart-placeholder"><i class="fas fa-chart-pie"></i><p>Gráfico de usuarios</p></div></div>
+                    <div class="chart-card"><h3>Tasa de precisión</h3><div class="chart-placeholder"><i class="fas fa-chart-bar"></i><p>Gráfico de precisión</p></div></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CONFIGURACIÓN -->
+        <section id="section-configuracion" class="dashboard-section">
+            <div class="config-container">
+                <h2><i class="fas fa-gear"></i> Configuración</h2>
+                <div class="config-grid">
+                    <div class="config-card"><h3><i class="fas fa-user-shield"></i> Seguridad</h3><p>Gestiona la seguridad de tu cuenta</p><button class="btn btn-secondary">Cambiar contraseña</button></div>
+                    <div class="config-card"><h3><i class="fas fa-bell"></i> Notificaciones</h3><p>Configura tus preferencias de notificación</p><button class="btn btn-secondary">Gestionar</button></div>
+                    <div class="config-card"><h3><i class="fas fa-palette"></i> Apariencia</h3><p>Tema claro / oscuro</p><button class="btn btn-secondary" id="themeToggle">Cambiar tema</button></div>
+                    <div class="config-card"><h3><i class="fas fa-database"></i> Datos</h3><p>Exporta o elimina tus datos</p><button class="btn btn-secondary">Exportar datos</button></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FOOTER -->
+        <footer class="dashboard-footer">
+            <div class="footer-content">
+                <div class="footer-section"><h4>Botardo</h4><ul><li><a href="../index.html#nosotros">Quiénes somos</a></li><li><a href="#">Investigación</a></li><li><a href="#">Legal</a></li></ul></div>
+                <div class="footer-section"><h4>Productos</h4><ul><li><a href="../index.html#inicio">Botardo Face App</a></li><li><a target="_blank" href="https://botardoia.netlify.app/">Botardo IA</a></li></ul></div>
+                <div class="footer-section"><h4>Legal</h4><ul><li><a target="_blank" href="legal/privacidad.html">Privacidad</a></li><li><a target="_blank" href="legal/terminos.html">Términos</a></li><li><a target="_blank" href="legal/seguridad.html">Seguridad</a></li><li><a target="_blank" href="legal/transparencia.html">Transparencia</a></li></ul></div>
+                <div class="footer-section"><h4>Recursos</h4><ul><li><a href="#">API</a></li><li><a href="#">Documentación</a></li><li><a href="#">Estado</a></li></ul></div>
+            </div>
+            <div class="footer-bottom"><div class="footer-bottom-content"><div class="footer-info"><span>© 2026 Botardo Face · Colegio Luis Madina · Colombia</span></div></div></div>
+        </footer>
+    </main>
+
+    <!-- CONFIG.JS -->
+    <script src="../javascript/config.js"></script>
+</body>
+</html>
