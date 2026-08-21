@@ -1,7 +1,7 @@
 (function() {
     'use strict';
 
-    // ===== PERFIL REDES SOCIALES =====
+    // ===== perfil  =====
     let posts = [];
     let bioText = 'Aún no has agregado una descripción.';
     let statusEmoji = '😊';
@@ -185,7 +185,7 @@
     window.eliminarPost = eliminarPost;
     window.agregarPost = agregarPost;
 
-    // ===== DATOS DE USUARIO =====
+    // ===== datos de usuario =====
     const userData = {
         name: 'Usuario',
         email: 'usuario@ejemplo.com',
@@ -267,7 +267,7 @@
 
     let clases = [];
 
-    // ===== NAVEGACIÓN =====
+    // ===== navegación =====
     function navigateTo(sectionId) {
         const sectionName = sectionId.replace('section-', '');
         const titles = {
@@ -300,7 +300,7 @@
         notifDropdown.classList.remove('open');
     }
 
-    // ===== PROYECTOS =====
+    // ===== proyectos =====
     function loadProjects() {
         if (!projectsGrid) return;
         projectsGrid.innerHTML = '';
@@ -317,7 +317,7 @@
         });
     }
 
-    // ===== USUARIO =====
+    // ===== usuario =====
     function loadUserData() {
         const storedName = localStorage.getItem('botardo_user_name');
         const storedEmail = localStorage.getItem('botardo_user_email');
@@ -332,7 +332,7 @@
         document.querySelector('.user-role').textContent = 'Alumno';
     }
 
-    // ===== ESTADÍSTICAS =====
+    // ===== estadisticas =====
     function updateStats() {
         const now = Date.now();
         const deltaTime = (now - lastUpdateTime) / 1000;
@@ -370,7 +370,7 @@
         }
     }
 
-    // ===== CLASES / HORARIO =====
+    // ===== horario  =====
     function cargarClases() {
         const stored = localStorage.getItem('botardo_clases');
         if (stored) {
@@ -501,7 +501,7 @@
         agregarNotificacionSistema('Clase eliminada', `Has eliminado una clase del horario`);
     }
 
-    // ===== NOTIFICACIONES =====
+    // ===== notificaciones =====
     function agregarNotificacionSistema(titulo, mensaje) {
         const list = document.querySelector('#notifSistema .notif-list');
         if (!list) return;
@@ -555,7 +555,7 @@
         }
     }
 
-    // ===== MODAL CLASES =====
+    // ===== modal clases =====
     function abrirModal(clase = null) {
         const overlay = document.getElementById('modalOverlay');
         if (!overlay) {
@@ -788,7 +788,7 @@
         renderizarHorario();
     }
 
-    // ===== EVENTOS =====
+    // ===== eventos =====
     if (menuToggle) {
         menuToggle.addEventListener('click', function(e) {
             e.stopPropagation();
@@ -891,7 +891,7 @@
         });
     }
 
-    // ===== CÁMARA =====
+    // ===== camara =====
     let stream = null;
     let cameraActive = false;
     let facingMode = 'user';
@@ -1015,7 +1015,7 @@
         });
     }
 
-    // ===== TEMA OSCURO =====
+    // ===== tema oscuro =====
     let darkMode = false;
 
     if (themeToggle) {
@@ -1025,11 +1025,11 @@
                 document.documentElement.style.setProperty('--bg-main', '#0f0f1a');
                 document.documentElement.style.setProperty('--card-bg', 'rgba(30, 30, 50, 0.85)');
                 document.documentElement.style.setProperty('--text-primary', '#e8e8f0');
-                document.documentElement.style.setProperty('--text-secondary', '#a8a8c0');
+                document.documentElement.style.setProperty('--text-secondary', '#f3efee');
                 document.documentElement.style.setProperty('--border-color', 'rgba(255,255,255,0.06)');
                 this.textContent = 'Modo claro';
             } else {
-                document.documentElement.style.setProperty('--bg-main', '#f0f2f5');
+                document.documentElement.style.setProperty('--bg-main', '#005ae0');
                 document.documentElement.style.setProperty('--card-bg', 'rgba(255,255,255,0.85)');
                 document.documentElement.style.setProperty('--text-primary', '#1a2332');
                 document.documentElement.style.setProperty('--text-secondary', '#4a5a6e');
@@ -1039,7 +1039,7 @@
         });
     }
 
-    // ===== PROYECTOS =====
+    // ===== proyectos =====
     const newProjectBtn = document.getElementById('newProjectBtn');
     if (newProjectBtn) {
         newProjectBtn.addEventListener('click', function() {
@@ -1051,7 +1051,7 @@
         });
     }
 
-    // ===== EXPONER FUNCIONES GLOBALES =====
+    // ===== funciones globales =====
     window.editarClase = editarClase;
     window.eliminarClase = eliminarClase;
     window.abrirModal = abrirModal;
@@ -1060,7 +1060,7 @@
     window.eliminarPost = eliminarPost;
     window.agregarPost = agregarPost;
 
-    // ===== INIT =====
+    // ===== init =====
     function init() {
         loadUserData();
         loadProjects();
