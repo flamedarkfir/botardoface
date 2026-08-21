@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Cámara con Tracking Facial</title>
+<style>
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; margin:0; padding:0;}
+  html, body{
+    width:100%; height:100%;
+    overflow:hidden;
+    background:#000;
+    touch-action:manipulation;
+  }
+  body{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    background:#000;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color:#fff;
+  }
+  .stage{
+    position:relative;
+    width:100vw;
+    height:100dvh;
+    background:#000;
+    overflow:hidden;
+  }
+  video{ display:none; }
+  canvas#output{
+    width:100%;
+    height:100%;
+    display:block;
+  }
+  /* overlay de estado */
+  .status{
+    position:absolute;
+    top:12px;
+    left:12px;
+    background:#000000aa;
+    backdrop-filter:blur(6px);
+    padding:6px 14px;
+    border-radius:999px;
+    font-size:12px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    pointer-events:none;
+    z-index:10;
+  }
+  .dot{
+    width:8px; height:8px; border-radius:50%;
+    background:#8a8a99;
+    transition:background .2s;
+  }
+  .dot.tracking{ background:#4ade80; box-shadow:0 0 8px #4ade8099; }
+  .dot.searching{ background:#facc15; }
+
+  /* Botón menú desplegable (siempre visible) */
+  .menu-toggle{
+    position:absolute;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:20;
+    background:#222233ee;
+    backdrop-filter:blur(8px);
+    border:1px solid #ffffff33;
+    border-radius:30px;
+    padding:10px 20px;
+    color:#fff;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    min-height:44px;
+    touch-action:manipulation;
+    transition:background .2s;
+  }
+  .menu-toggle:active{ background:#333355; }
+
+  /* Panel desplegable */
+  .menu-panel{
+    position:absolute;
+    bottom:80px;
+    left:50%;
+    transform:translateX(-50%) translateY(10px);
+    width:min(400px, 92vw);
+    background:#1a1a24ee;
+    backdrop-filter:blur(12px);
+    border:1px solid #ffffff1a;
+    border-radius:16px;
+    padding:18px 20px;
+    display:none;
+    flex-direction:column;
+    gap:14px;
+    z-index:20;
+    transition:opacity .25s, transform .25s;
+    box-shadow:0 8px 40px #000000cc;
+  }
+  .menu-panel.open{
+    display:flex;
+    opacity:1;
+    transform:translateX(-50%) translateY(0);
+  }
+  .menu-panel .row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  .menu-panel .row label{
+    flex:0 0 140px;
+    font-size:12px;
+    color:#aaa;
+  }
+  .menu-panel .row input[type=range]{
+    flex:1;
+    accent-color:#6ee7ff;
+    -webkit-appearance:none;
+    height:28px;
+    background:transparent;
+  }
+  .menu-panel .row input[type=range]::-webkit-slider-runnable-track{
+    height:4px;
+    background:#ffffff26;
+    border-radius:2px;
+  }
+  .menu-panel .row input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:22px; height:22px;
+    border-radius:50%;
+    background:#6ee7ff;
+    margin-top:-9px;
+    box-shadow:0 0 0 4px #6ee7ff22;
+  }
+  .menu-panel .row input[type=range]::-moz-range-track{
+    height:4px;
+    background:#ffffff26;
+    border-radius:2px;
+  }
+  .menu-panel .row input[type=range]::-moz-range-thumb{
+    width:22px; height:22px;
+    border:none;
+    border-radius:50%;
+    background:#6ee7ff;
+  }
+  .menu-panel .row .val{
+    width:40px;
+    text-align:right;
+    font-size:12px;
+    color:#ddd;
+    font-variant-numeric:tabular-nums;
+  }
+  .menu-panel .buttons{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .menu-panel .buttons button{
+    flex:1;
+    background:linear-gradient(135deg, #6ee7ff, #ff6ec7);
+    border:none;
+    color:#0b0b0f;
+    font-weight:600;
+    font-size:13px;
+    padding:10px 12px;
+    border-radius:10px;
+    cursor:pointer;
+    min-height:44px;
+    transition:transform .1s;
+  }
+  .menu-panel .buttons button:active{ transform:scale(0.97); }
+  .menu-panel .buttons button.secondary{
+    background:#2a2a3a;
+    color:#fff;
+    border:1px solid #ffffff1a;
+  }
+  .menu-panel .hint{
+    font-size:11px;
+    color:#888;
+    line-height:1.5;
+  }
+
+  /* Loading overlay */
+  .loading-overlay{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:12px;
+    background:#000c;
+    color:#fff;
+    font-size:14px;
+    z-index:5;
+  }
+  .spinner{
+    width:28px; height:28px;
+    border-radius:50%;
+    border:3px solid #ffffff33;
+    border-top-color:#6ee7ff;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <video id="video" autoplay playsinline webkit-playsinline muted></video>
+  <canvas id="output"></canvas>
+
+  <div class="status">
+    <div id="statusDot" class="dot"></div>
+    <span id="statusText">Iniciando...</span>
+  </div>
+
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner"></div>
+    <div>Cargando modelo...</div>
+  </div>
+
+  <!-- Botón para abrir/cerrar menú -->
+  <button class="menu-toggle" id="menuToggle">⚙️ Ajustes</button>
+
+  <!-- Panel desplegable con controles -->
+  <div class="menu-panel" id="menuPanel">
+    <div class="buttons">
+      <button id="startBtn">Iniciar cámara</button>
+      <button id="switchBtn" class="secondary" disabled>Cambiar cámara</button>
+    </div>
+    <div class="row">
+      <label for="targetSize">Tamaño objetivo</label>
+      <input type="range" id="targetSize" min="0.15" max="0.55" step="0.01" value="0.32">
+      <span class="val" id="targetSizeVal">0.32</span>
+    </div>
+    <div class="row">
+      <label for="maxZoom">Zoom máximo</label>
+      <input type="range" id="maxZoom" min="1" max="3" step="0.1" value="2.0">
+      <span class="val" id="maxZoomVal">2.0x</span>
+    </div>
+    <div class="row">
+      <label for="smoothing">Suavizado</label>
+      <input type="range" id="smoothing" min="0.02" max="0.5" step="0.01" value="0.12">
+      <span class="val" id="smoothingVal">0.12</span>
+    </div>
+    <div class="hint">
+      ⚠️ El zoom digital recorta y escala, por eso pierde calidad.
+      El zoom máximo está limitado a 3x para conservar algo de definición.
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+(async function(){
+  const video=document.getElementById('video');
+  const canvas=document.getElementById('output');
+  const ctx=canvas.getContext('2d');
+  const statusDot=document.getElementById('statusDot');
+  const statusText=document.getElementById('statusText');
+  const loadingOverlay=document.getElementById('loadingOverlay');
+  const startBtn=document.getElementById('startBtn');
+  const switchBtn=document.getElementById('switchBtn');
+  const menuToggle=document.getElementById('menuToggle');
+  const menuPanel=document.getElementById('menuPanel');
+
+  const targetSizeInput=document.getElementById('targetSize');
+  const maxZoomInput=document.getElementById('maxZoom');
+  const smoothingInput=document.getElementById('smoothing');
+  const targetSizeVal=document.getElementById('targetSizeVal');
+  const maxZoomVal=document.getElementById('maxZoomVal');
+  const smoothingVal=document.getElementById('smoothingVal');
+
+  [[targetSizeInput,targetSizeVal,v=>v],[maxZoomInput,maxZoomVal,v=>v+'x'],[smoothingInput,smoothingVal,v=>v]].forEach(([input,out,fmt])=>{
+    input.addEventListener('input',()=>out.textContent=fmt(input.value));
+  });
+
+  // Toggle menú
+  menuToggle.addEventListener('click',()=>{
+    menuPanel.classList.toggle('open');
+    menuToggle.textContent=menuPanel.classList.contains('open')?'✕ Cerrar':'⚙️ Ajustes';
+  });
+
+  let currentFacingMode='user';
+  let stream=null;
+  let modelsLoaded=false;
+  let running=false;
+  let smoothCx=null,smoothCy=null,smoothZoom=1;
+  let lastKnownBox=null;
+  let lastSeenAt=0;
+  const LOST_GRACE_MS=4000;
+  const FAST_INPUT_SIZE=160;
+  const SEARCH_INPUT_SIZE=320;
+
+  function getDetectorOptions(){
+    const searching=!lastKnownBox||(performance.now()-lastSeenAt)>800;
+    return new faceapi.TinyFaceDetectorOptions({
+      inputSize:searching?SEARCH_INPUT_SIZE:FAST_INPUT_SIZE,
+      scoreThreshold:searching?0.25:0.4
+    });
+  }
+
+  const MODEL_URL='https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
+
+  async function loadModels(){
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    modelsLoaded=true;
+    loadingOverlay.style.display='none';
+    statusText.textContent='Listo. Pulsa "Iniciar cámara".';
+  }
+
+  const stageEl=document.querySelector('.stage');
+
+  function resizeCanvasToStage(){
+    const rect=stageEl.getBoundingClientRect();
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=Math.round(rect.width*dpr);
+    canvas.height=Math.round(rect.height*dpr);
+  }
+
+  async function startCamera(){
+    try{
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+      stream=await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:currentFacingMode, width:{ideal:1920}, height:{ideal:1080} },
+        audio:false
+      });
+      video.srcObject=stream;
+      await video.play();
+      resizeCanvasToStage();
+      window.addEventListener('resize',resizeCanvasToStage);
+      window.addEventListener('orientationchange',resizeCanvasToStage);
+      switchBtn.disabled=false;
+      startBtn.textContent='Reiniciar';
+      running=true;
+      statusText.textContent='Buscando rostro...';
+      statusDot.className='dot searching';
+      detectLoop();
+      renderLoop();
+    }catch(err){
+      statusText.textContent='Error: '+err.message;
+      alert('Error de cámara: '+err.message);
+    }
+  }
+
+  let detecting=false;
+  async function detectLoop(){
+    if(!running) return;
+    if(!detecting){
+      detecting=true;
+      try{
+        const detection=await faceapi.detectSingleFace(video,getDetectorOptions());
+        if(detection){
+          lastKnownBox=detection.box;
+          lastSeenAt=performance.now();
+          statusText.textContent='';
+          statusDot.className='dot tracking';
+        }else{
+          const elapsed=performance.now()-lastSeenAt;
+          if(lastKnownBox&&elapsed<LOST_GRACE_MS){
+            statusText.textContent='';
+            statusDot.className='dot searching';
+          }else{
+            lastKnownBox=null;
+            statusText.textContent='Buscando rostro...';
+            statusDot.className='dot searching';
+          }
+        }
+      }catch(e){}
+      detecting=false;
+    }
+    requestAnimationFrame(detectLoop);
+  }
+
+  function renderLoop(){
+    if(!running) return;
+    const vw=video.videoWidth, vh=video.videoHeight;
+    if(vw&&vh){
+      const targetFaceRatio=parseFloat(targetSizeInput.value);
+      const maxZoom=parseFloat(maxZoomInput.value);
+      const smoothing=parseFloat(smoothingInput.value);
+      let cx=vw/2, cy=vh/2, zoom=1;
+      if(lastKnownBox){
+        const box=lastKnownBox;
+        cx=box.x+box.width/2;
+        cy=box.y+box.height/2;
+        const currentFaceRatio=box.height/vh;
+        const desiredZoom=currentFaceRatio>0?(targetFaceRatio/currentFaceRatio):1;
+        zoom=Math.min(Math.max(desiredZoom,1),maxZoom);
+      }
+      if(smoothCx===null){ smoothCx=cx; smoothCy=cy; smoothZoom=zoom; }
+      smoothCx+=(cx-smoothCx)*smoothing;
+      smoothCy+=(cy-smoothCy)*smoothing;
+      smoothZoom+=(zoom-smoothZoom)*smoothing;
+
+      const canvasAspect=canvas.width/canvas.height;
+      let cropH=vh/smoothZoom;
+      let cropW=cropH*canvasAspect;
+      if(cropW>vw){ cropW=vw; cropH=cropW/canvasAspect; }
+
+      let sx=smoothCx-cropW/2;
+      let sy=smoothCy-cropH/2;
+      sx=Math.min(Math.max(sx,0),Math.max(0,vw-cropW));
+      sy=Math.min(Math.max(sy,0),Math.max(0,vh-cropH));
+
+      ctx.save();
+      if(currentFacingMode==='user'){ ctx.translate(canvas.width,0); ctx.scale(-1,1); }
+      ctx.drawImage(video,sx,sy,cropW,cropH,0,0,canvas.width,canvas.height);
+      ctx.restore();
+    }
+    requestAnimationFrame(renderLoop);
+  }
+
+  startBtn.addEventListener('click',async()=>{
+    if(!modelsLoaded){ alert('Espera a que cargue el modelo.'); return; }
+    smoothCx=null; smoothCy=null; smoothZoom=1; lastKnownBox=null; lastSeenAt=0;
+    await startCamera();
+  });
+
+  switchBtn.addEventListener('click',async()=>{
+    currentFacingMode=currentFacingMode==='user'?'environment':'user';
+    smoothCx=null; smoothCy=null; smoothZoom=1; lastKnownBox=null; lastSeenAt=0;
+    await startCamera();
+  });
+
+  loadModels().catch(err=>{
+    statusText.textContent='Error cargando modelo';
+    loadingOverlay.innerHTML='<div>❌ Error al cargar el modelo de detección facial.<br>Verifica tu conexión a internet.</div>';
+  });
+})();
+</script>
+</body>
+</html>
