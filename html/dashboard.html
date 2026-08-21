@@ -9,7 +9,6 @@
 </head>
 <body>
 
-    <!-- SIDEBAR -->
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
             <img src="../recourses/images/P/logo.webp" alt="Botardo Face" />
@@ -19,7 +18,7 @@
             <ul>
                 <li class="active"><a href="#panel" data-section="panel"><i class="fas fa-th-large"></i><span>Panel</span></a></li>
                 <li><a href="#perfil" data-section="perfil"><i class="fas fa-user"></i><span>Perfil</span></a></li>
-                <li><a href="#clases" data-section="clases"><i class="fas fa-chalkboard-user"></i><span>Clases</span></a></li>
+                <li><a href="#clases" data-section="clases"><i class="fas fa-chalkboard-user"></i><span>Horario</span></a></li>
                 <li><a href="#camara" data-section="camara"><i class="fas fa-camera"></i><span>Cámara</span></a></li>
                 <li><a href="#proyectos" data-section="proyectos"><i class="fas fa-folder-open"></i><span>Proyectos</span></a></li>
                 <li><a href="#estadisticas" data-section="estadisticas"><i class="fas fa-chart-bar"></i><span>Estadísticas</span></a></li>
@@ -31,10 +30,8 @@
         </div>
     </aside>
 
-    <!-- MAIN -->
     <main class="main-content">
 
-        <!-- HEADER -->
         <header class="dashboard-header">
             <div class="header-left">
                 <button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
@@ -46,25 +43,50 @@
                     <input type="text" placeholder="Buscar..." id="searchInput" />
                 </div>
                 <div class="header-notifications">
-                    <button class="notif-btn" id="notifBtn"><i class="fas fa-bell"></i><span class="notif-badge">3</span></button>
+                    <button class="notif-btn" id="notifBtn">
+                        <i class="fas fa-bell"></i>
+                        <span class="notif-badge">0</span>
+                    </button>
                     <div class="notif-dropdown" id="notifDropdown">
-                        <div class="notif-header"><span>Notificaciones</span><button class="notif-mark-all">Marcar todas</button></div>
-                        <ul class="notif-list">
-                            <li class="notif-item unread"><i class="fas fa-face-smile"></i><div><p>Nuevo reconocimiento exitoso</p><span>Hace 5 min</span></div></li>
-                            <li class="notif-item unread"><i class="fas fa-user-plus"></i><div><p>Usuario registrado: Juan Pérez</p><span>Hace 1 hora</span></div></li>
-                            <li class="notif-item"><i class="fas fa-arrow-up"></i><div><p>Sistema actualizado a v2.0</p><span>Hace 3 horas</span></div></li>
-                        </ul>
+                        <div class="notif-tabs">
+                            <button class="notif-tab active" data-tab="live">En vivo</button>
+                            <button class="notif-tab" data-tab="sistema">Sistema</button>
+                        </div>
+                        <div class="notif-content">
+                            <div class="notif-panel active" id="notifLive">
+                                <div class="notif-header">
+                                    <span>Notificaciones en vivo</span>
+                                    <button class="notif-mark-all">Marcar todas</button>
+                                </div>
+                                <ul class="notif-list">
+                                    <li style="text-align:center;padding:1rem;color:var(--text-secondary);font-size:0.8rem;">
+                                        <i class="fas fa-bell-slash" style="font-size:1.5rem;display:block;margin-bottom:0.5rem;opacity:0.3;"></i>
+                                        No hay notificaciones en vivo
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="notif-panel" id="notifSistema">
+                                <div class="notif-header">
+                                    <span>Notificaciones del sistema</span>
+                                    <button class="notif-mark-all">Marcar todas</button>
+                                </div>
+                                <ul class="notif-list">
+                                    <li style="text-align:center;padding:1rem;color:var(--text-secondary);font-size:0.8rem;">
+                                        <i class="fas fa-check-circle" style="font-size:1.5rem;display:block;margin-bottom:0.5rem;opacity:0.3;"></i>
+                                        Sistema funcionando correctamente
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="header-user">
                     <img src="../recourses/images/S/notfound.webp" alt="Usuario" id="userAvatar" />
-                    <div class="user-info"><span class="user-name" id="userNameDisplay">Usuario</span><span class="user-role">Administrador</span></div>
+                    <div class="user-info"><span class="user-name" id="userNameDisplay">Usuario</span><span class="user-role">Alumno</span></div>
                 </div>
             </div>
         </header>
 
-        <!-- SECCIONES -->
-        <!-- PANEL -->
         <section id="section-panel" class="dashboard-section active">
             <div class="stats-grid">
                 <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-user-check"></i></div><div class="stat-info"><span class="stat-value" id="totalReconocimientos">0</span><span class="stat-label">Reconocimientos</span></div><div class="stat-change positive"><i class="fas fa-arrow-up"></i> 12%</div></div>
@@ -87,48 +109,99 @@
             </div>
         </section>
 
-        <!-- PERFIL -->
         <section id="section-perfil" class="dashboard-section">
             <div class="profile-container">
                 <div class="profile-card">
                     <div class="profile-header">
-                        <div class="profile-avatar">
-                            <img src="../recourses/images/S/notfound.webp" alt="Avatar" id="profileAvatar" />
-                            <button class="avatar-edit"><i class="fas fa-camera"></i></button>
+                        <div class="profile-avatar-wrapper">
+                            <div class="profile-avatar">
+                                <img src="../recourses/images/S/notfound.webp" alt="Avatar" id="profileAvatar" />
+                                <div class="avatar-status">
+                                    <span class="status-emoji" id="statusEmoji">😊</span>
+                                </div>
+                            </div>
+                            <div class="profile-name-wrapper">
+                                <h2 id="profileName">Usuario</h2>
+                                <p class="profile-username" id="profileUsername">@usuario</p>
+                            </div>
                         </div>
-                        <div class="profile-info">
-                            <h2 id="profileName">Usuario</h2>
-                            <p class="profile-email" id="profileEmail">usuario@ejemplo.com</p>
-                            <span class="profile-role">Administrador</span>
+                        <div class="profile-badge">
+                            <span class="badge-role">🎓 Alumno</span>
+                            <span class="badge-since">Desde 2024</span>
                         </div>
                     </div>
+
                     <div class="profile-body">
-                        <div class="profile-form">
-                            <div class="form-group"><label>Nombres completos</label><input type="text" value="Usuario" id="editName" /></div>
-                            <div class="form-group"><label>Correo electrónico</label><input type="email" value="usuario@ejemplo.com" id="editEmail" /></div>
-                            <div class="form-group"><label>Teléfono</label><input type="text" value="+57 300 000 0000" id="editPhone" /></div>
-                            <div class="form-group"><label>Rol</label><input type="text" value="Administrador" disabled /></div>
-                            <button class="btn btn-primary" id="saveProfileBtn"><i class="fas fa-save"></i> Guardar cambios</button>
+                        <div class="profile-bio">
+                            <div class="bio-header">
+                                <i class="fas fa-pen"></i>
+                                <h3>Acerca de mí</h3>
+                                <button class="btn-edit-bio" id="editBioBtn"><i class="fas fa-edit"></i></button>
+                            </div>
+                            <p id="profileBio" class="bio-text">Estudiante apasionado por la tecnología y el desarrollo de proyectos innovadores. 🚀</p>
+                            <div class="bio-edit" id="bioEdit" style="display:none;">
+                                <textarea id="bioTextarea" rows="3" placeholder="Escribe algo sobre ti..."></textarea>
+                                <div class="bio-actions">
+                                    <button class="btn btn-sm btn-cancel" id="cancelBioBtn">Cancelar</button>
+                                    <button class="btn btn-sm btn-save" id="saveBioBtn">Guardar</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="profile-stats">
+                            <div class="stat-item">
+                                <span class="stat-number" id="friendCount">0</span>
+                                <span class="stat-label">Amigos</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-number" id="postCount">0</span>
+                                <span class="stat-label">Publicaciones</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-number" id="classCount">0</span>
+                                <span class="stat-label">Clases</span>
+                            </div>
+                        </div>
+
+                        <div class="profile-posts">
+                            <div class="posts-header">
+                                <h3><i class="fas fa-newspaper"></i> Mis notas</h3>
+                                <button class="btn btn-primary btn-sm" id="addPostBtn"><i class="fas fa-plus"></i> Nueva nota</button>
+                            </div>
+                            <div class="posts-grid" id="postsGrid">
+                                <div class="empty-posts">
+                                    <i class="fas fa-pen-fancy"></i>
+                                    <p>No tienes notas aún</p>
+                                    <p style="font-size:0.8rem;">Comparte tus pensamientos o apuntes</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- CLASES -->
         <section id="section-clases" class="dashboard-section">
             <div class="classes-container">
-                <div class="classes-header"><h2><i class="fas fa-chalkboard-user"></i> Mis Clases</h2><button class="btn btn-primary"><i class="fas fa-plus"></i> Nueva clase</button></div>
-                <div class="classes-grid">
-                    <div class="class-card"><div class="class-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-users"></i></div><div class="class-info"><h3>Reconocimiento Facial</h3><p>12 estudiantes · 3 proyectos</p></div><div class="class-status active">Activa</div></div>
-                    <div class="class-card"><div class="class-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-robot"></i></div><div class="class-info"><h3>IA para Principiantes</h3><p>8 estudiantes · 2 proyectos</p></div><div class="class-status active">Activa</div></div>
-                    <div class="class-card"><div class="class-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-code"></i></div><div class="class-info"><h3>Desarrollo Web</h3><p>15 estudiantes · 5 proyectos</p></div><div class="class-status inactive">Inactiva</div></div>
-                    <div class="class-card"><div class="class-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-database"></i></div><div class="class-info"><h3>Bases de Datos</h3><p>10 estudiantes · 2 proyectos</p></div><div class="class-status active">Activa</div></div>
+                <div class="classes-header">
+                    <h2><i class="fas fa-calendar-alt"></i> Mi Horario</h2>
+                    <button class="btn btn-primary" id="addClassBtn"><i class="fas fa-plus"></i> Agregar materia</button>
+                </div>
+                <div class="schedule-wrapper" id="scheduleWrapper">
+                    <div class="schedule-grid" id="scheduleGrid">
+                        <div class="empty-state" style="grid-column:1/-1;text-align:center;padding:4rem 2rem;color:var(--text-secondary);">
+                            <i class="fas fa-calendar-plus" style="font-size:4rem;margin-bottom:1.5rem;display:block;opacity:0.2;"></i>
+                            <h3 style="font-size:1.2rem;margin-bottom:0.5rem;color:var(--text-primary);">Aun no has añadido tus clases</h3>
+                            <p style="font-size:0.9rem;margin-bottom:1.5rem;">Crea tu horario agregando las materias que cursas</p>
+                            <button class="btn btn-primary" onclick="abrirModal(null)">
+                                <i class="fas fa-plus"></i> Agregar materia
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- CÁMARA -->
         <section id="section-camara" class="dashboard-section">
             <div class="camera-container">
                 <div class="camera-card">
@@ -156,17 +229,13 @@
             </div>
         </section>
 
-        <!-- PROYECTOS -->
         <section id="section-proyectos" class="dashboard-section">
             <div class="projects-container">
                 <div class="projects-header"><h2><i class="fas fa-folder-open"></i> Proyectos</h2><button class="btn btn-primary" id="newProjectBtn"><i class="fas fa-plus"></i> Nuevo proyecto</button></div>
-                <div class="projects-grid" id="projectsGrid">
-                    <!-- Los proyectos se generan desde config.js -->
-                </div>
+                <div class="projects-grid" id="projectsGrid"></div>
             </div>
         </section>
 
-        <!-- ESTADÍSTICAS -->
         <section id="section-estadisticas" class="dashboard-section">
             <div class="stats-container">
                 <h2><i class="fas fa-chart-bar"></i> Estadísticas</h2>
@@ -178,7 +247,6 @@
             </div>
         </section>
 
-        <!-- CONFIGURACIÓN -->
         <section id="section-configuracion" class="dashboard-section">
             <div class="config-container">
                 <h2><i class="fas fa-gear"></i> Configuración</h2>
@@ -191,7 +259,6 @@
             </div>
         </section>
 
-        <!-- FOOTER -->
         <footer class="dashboard-footer">
             <div class="footer-content">
                 <div class="footer-section"><h4>Botardo</h4><ul><li><a href="../index.html#nosotros">Quiénes somos</a></li><li><a href="#">Investigación</a></li><li><a href="#">Legal</a></li></ul></div>
@@ -203,7 +270,6 @@
         </footer>
     </main>
 
-    <!-- CONFIG.JS -->
     <script src="../javascript/config.js"></script>
 </body>
 </html>
