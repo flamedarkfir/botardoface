@@ -18,6 +18,7 @@
             <ul>
                 <li class="active"><a href="#panel" data-section="panel"><i class="fas fa-th-large"></i><span>Panel</span></a></li>
                 <li><a href="#perfil" data-section="perfil"><i class="fas fa-user"></i><span>Perfil</span></a></li>
+                <li><a href="#mensajes" data-section="mensajes"><i class="fas fa-comment-dots"></i><span>Mensajes</span></a></li>
                 <li><a href="#clases" data-section="clases"><i class="fas fa-chalkboard-user"></i><span>Horario</span></a></li>
                 <li><a href="#camara" data-section="camara"><i class="fas fa-camera"></i><span>Cámara</span></a></li>
                 <li><a href="#proyectos" data-section="proyectos"><i class="fas fa-folder-open"></i><span>Proyectos</span></a></li>
@@ -128,7 +129,7 @@
                         </div>
                         <div class="profile-badge">
                             <span class="badge-role">🎓 Alumno</span>
-                            <span class="badge-since">Nuevo miembro</span>
+                            <span class="badge-since" id="profileGrado">Grado: --</span>
                         </div>
                     </div>
 
@@ -150,6 +151,14 @@
                         </div>
 
                         <div class="profile-stats">
+                            <div class="stat-item">
+                                <span class="stat-number" id="followersCountStat">0</span>
+                                <span class="stat-label">Seguidores</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-number" id="followingCountStat">0</span>
+                                <span class="stat-label">Seguidos</span>
+                            </div>
                             <div class="stat-item">
                                 <span class="stat-number" id="friendCount">0</span>
                                 <span class="stat-label">Amigos</span>
@@ -177,6 +186,32 @@
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="section-mensajes" class="dashboard-section">
+            <div class="messages-container" style="display:flex;gap:1.25rem;height:calc(100vh - 190px);min-height:420px;">
+                <div class="messages-contacts" style="width:280px;flex-shrink:0;background:var(--card-bg);border-radius:16px;border:1px solid var(--border-color);overflow-y:auto;">
+                    <div style="padding:1rem;border-bottom:1px solid var(--border-color);">
+                        <h3 style="font-size:1rem;margin:0;"><i class="fas fa-comment-dots"></i> Conversaciones</h3>
+                    </div>
+                    <div id="chatContactsList" style="padding:0.5rem;"></div>
+                </div>
+                <div class="messages-chat" style="flex:1;background:var(--card-bg);border-radius:16px;border:1px solid var(--border-color);display:flex;flex-direction:column;overflow:hidden;">
+                    <div id="chatEmptyState" style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--text-secondary);text-align:center;padding:2rem;">
+                        <i class="fas fa-comments" style="font-size:3rem;opacity:0.2;margin-bottom:1rem;"></i>
+                        <p>Selecciona una conversación para empezar</p>
+                    </div>
+                    <div id="chatActiveWindow" style="display:none;flex-direction:column;height:100%;">
+                        <div id="chatHeader" style="padding:1rem;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;"></div>
+                        <div id="chatMessagesList" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:0.6rem;"></div>
+                        <div id="chatInputArea" style="display:flex;gap:0.5rem;padding:0.9rem;border-top:1px solid var(--border-color);">
+                            <input type="text" id="chatMessageInput" placeholder="Escribe un mensaje..." style="flex:1;padding:0.6rem 0.9rem;border-radius:10px;border:1px solid var(--border-color);outline:none;" />
+                            <button class="btn btn-primary btn-sm" id="chatSendBtn"><i class="fas fa-paper-plane"></i></button>
+                        </div>
+                        <div id="chatBlockedNotice" style="display:none;padding:0.9rem;text-align:center;color:var(--text-secondary);font-size:0.85rem;border-top:1px solid var(--border-color);"></div>
                     </div>
                 </div>
             </div>
@@ -252,10 +287,9 @@
             <div class="config-container">
                 <h2><i class="fas fa-gear"></i> Configuración</h2>
                 <div class="config-grid">
-                    <div class="config-card"><h3><i class="fas fa-user-shield"></i> Seguridad</h3><p>Gestiona la seguridad de tu cuenta</p><button class="btn btn-secondary">Cambiar contraseña</button></div>
-                    <div class="config-card"><h3><i class="fas fa-bell"></i> Notificaciones</h3><p>Configura tus preferencias de notificación</p><button class="btn btn-secondary">Gestionar</button></div>
-                    <div class="config-card"><h3><i class="fas fa-palette"></i> Apariencia</h3><p>Tema claro / oscuro</p><button class="btn btn-secondary" id="themeToggle">Cambiar tema</button></div>
-                    <div class="config-card"><h3><i class="fas fa-database"></i> Datos</h3><p>Exporta o elimina tus datos</p><button class="btn btn-secondary">Exportar datos</button></div>
+                    <div class="config-card"><h3><i class="fas fa-user-shield"></i> Seguridad</h3><p>Gestiona la seguridad de tu cuenta</p><button class="btn btn-secondary" id="changePasswordBtn">Cambiar contraseña</button></div>
+                    <div class="config-card"><h3><i class="fas fa-bell"></i> Notificaciones</h3><p>Configura tus preferencias de notificación</p><button class="btn btn-secondary" id="manageNotifBtn">Gestionar</button></div>
+                    <div class="config-card"><h3><i class="fas fa-database"></i> Datos</h3><p>Exporta o elimina tus datos</p><button class="btn btn-secondary" id="exportDataBtn">Exportar datos</button></div>
                 </div>
             </div>
         </section>

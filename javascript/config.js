@@ -1,19 +1,25 @@
 import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
 
-(function() {
+(function () {
     'use strict';
 
     let currentUser = null;
     let currentUserData = null;
+    let notifSettings = { live: true, sistema: true };
 
     let posts = [];
     let bioText = 'Aún no has agregado una descripción.';
     let statusEmoji = '😊';
     let clases = [];
     let followingSet = new Set();
+    let followersSet = new Set();
+    let followersList = [];
     let followersCount = 0;
     let presenceRefHandle = null;
     let onlineListenerRef = null;
+    let chatContacts = [];
+    let currentChatUid = null;
+    let currentChatListenerRef = null;
 
     const materiasDisponibles = [
         'Matemáticas', 'Español', 'Inglés', 'Ciencias Naturales', 'Ciencias Sociales',
@@ -79,6 +85,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const titles = {
             'section-panel': 'Panel',
             'section-perfil': 'Perfil',
+            'section-mensajes': 'Mensajes',
             'section-clases': 'Horario',
             'section-camara': 'Cámara',
             'section-proyectos': 'Proyectos',
@@ -125,6 +132,9 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         const userRoleEl = document.querySelector('.user-role');
         if (userRoleEl) userRoleEl.textContent = 'Alumno';
+
+        const profileGradoEl = document.getElementById('profileGrado');
+        if (profileGradoEl) profileGradoEl.textContent = 'Grado: ' + (data.grado || '--');
     }
 
     function updateStats() {
@@ -157,8 +167,19 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         if (postCountEl) postCountEl.textContent = posts.length;
         const classCountEl = document.getElementById('classCount');
         if (classCountEl) classCountEl.textContent = clases.length;
+
+        const followersCountEl = document.getElementById('followersCountStat');
+        if (followersCountEl) followersCountEl.textContent = followersCount;
+
+        const followingCountEl = document.getElementById('followingCountStat');
+        if (followingCountEl) followingCountEl.textContent = followingSet.size;
+
+        let amigos = 0;
+        followingSet.forEach(function (uid) {
+            if (followersSet.has(uid)) amigos++;
+        });
         const friendCountEl = document.getElementById('friendCount');
-        if (friendCountEl) friendCountEl.textContent = followersCount;
+        if (friendCountEl) friendCountEl.textContent = amigos;
     }
 
     function renderizarPosts() {
@@ -209,11 +230,11 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/posts'));
             posts = [];
             if (snap.exists()) {
-                snap.forEach(function(child) {
+                snap.forEach(function (child) {
                     const val = child.val();
                     posts.push({ id: child.key, texto: val.texto, fecha: val.fecha, createdAt: val.createdAt || 0 });
                 });
-                posts.sort(function(a, b) { return b.createdAt - a.createdAt; });
+                posts.sort(function (a, b) { return b.createdAt - a.createdAt; });
             }
         } catch (err) {
             console.error('Error cargando notas:', err);
@@ -244,7 +265,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         if (!confirm('¿Eliminar esta nota?')) return;
         try {
             await remove(ref(rtdb, 'users/' + currentUser.uid + '/posts/' + id));
-            posts = posts.filter(function(p) { return p.id !== id; });
+            posts = posts.filter(function (p) { return p.id !== id; });
             renderizarPosts();
             actualizarStats();
         } catch (err) {
@@ -300,7 +321,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const addPostBtn = document.getElementById('addPostBtn');
 
         if (editBioBtn) {
-            editBioBtn.addEventListener('click', function() {
+            editBioBtn.addEventListener('click', function () {
                 bioEdit.style.display = 'block';
                 bioTextEl.style.display = 'none';
                 this.style.display = 'none';
@@ -309,7 +330,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
 
         if (cancelBioBtn) {
-            cancelBioBtn.addEventListener('click', function() {
+            cancelBioBtn.addEventListener('click', function () {
                 bioEdit.style.display = 'none';
                 bioTextEl.style.display = 'block';
                 editBioBtn.style.display = 'inline-block';
@@ -318,7 +339,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
 
         if (saveBioBtn) {
-            saveBioBtn.addEventListener('click', async function() {
+            saveBioBtn.addEventListener('click', async function () {
                 const nuevoTexto = bioTextarea.value.trim();
                 if (!nuevoTexto) {
                     alert('Por favor escribe algo sobre ti.');
@@ -334,7 +355,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
 
         if (addPostBtn) {
-            addPostBtn.addEventListener('click', function() {
+            addPostBtn.addEventListener('click', function () {
                 const texto = prompt('Escribe tu nota:');
                 if (texto && texto.trim()) {
                     agregarPost(texto.trim());
@@ -344,7 +365,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         const emojiEl = document.getElementById('statusEmoji');
         if (emojiEl) {
-            emojiEl.addEventListener('click', function() {
+            emojiEl.addEventListener('click', function () {
                 const emojis = ['😊', '😎', '🤓', '🔥', '💪', '🌟', '🚀', '💡', '🎯', '✨', '😄', '🤩', '👨‍💻', '👩‍💻', '🧠'];
                 const current = emojis.indexOf(statusEmoji);
                 const next = (current + 1) % emojis.length;
@@ -381,7 +402,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/clases'));
             clases = [];
             if (snap.exists()) {
-                snap.forEach(function(child) {
+                snap.forEach(function (child) {
                     clases.push(Object.assign({ id: child.key }, child.val()));
                 });
             }
@@ -488,6 +509,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     function agregarNotificacionSistema(titulo, mensaje) {
+        if (!notifSettings.sistema) return;
         const list = document.querySelector('#notifSistema .notif-list');
         if (!list) return;
         const emptyMsg = list.querySelector('li:only-child');
@@ -503,6 +525,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     function agregarNotificacionLive(titulo, mensaje) {
+        if (!notifSettings.live) return;
         const list = document.querySelector('#notifLive .notif-list');
         if (!list) return;
         const emptyMsg = list.querySelector('li:only-child');
@@ -623,14 +646,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
         document.querySelectorAll('.day-checkbox').forEach(cb => {
-            cb.addEventListener('change', function() {
+            cb.addEventListener('change', function () {
                 this.closest('label').classList.toggle('checked', this.checked);
             });
         });
 
         const overlay = document.getElementById('modalOverlay');
         if (overlay) {
-            overlay.addEventListener('click', function(e) {
+            overlay.addEventListener('click', function (e) {
                 if (e.target === this) cerrarModal();
             });
         }
@@ -753,7 +776,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const q = query(usersRef, where('username', '==', username));
         const snapshot = await getDocs(q);
         let taken = false;
-        snapshot.forEach(function(docSnap) {
+        snapshot.forEach(function (docSnap) {
             if (docSnap.id !== uid) taken = true;
         });
         return taken;
@@ -829,13 +852,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         overlay.classList.add('open');
 
-        saveBtn.onclick = async function() {
+        saveBtn.onclick = async function () {
             nameError.textContent = '';
             usernameError.textContent = '';
             emailError.textContent = '';
 
             const name = nameInput.value.trim();
-            const username = usernameInput.value.trim();
+            const username = usernameInput.value.trim().toLowerCase();
             const email = emailInput.value.trim();
 
             let valid = true;
@@ -968,7 +991,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         document.getElementById('passwordModalClose').addEventListener('click', closeChangePasswordModal);
         document.getElementById('passwordModalCancel').addEventListener('click', closeChangePasswordModal);
-        document.getElementById('passwordModalOverlay').addEventListener('click', function(e) {
+        document.getElementById('passwordModalOverlay').addEventListener('click', function (e) {
             if (e.target === this) closeChangePasswordModal();
         });
         document.getElementById('passwordModalSave').addEventListener('click', handleChangePassword);
@@ -976,7 +999,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     function openChangePasswordModal() {
         buildChangePasswordModal();
-        const isPasswordProvider = currentUser.providerData.some(function(p) { return p.providerId === 'password'; });
+        const isPasswordProvider = currentUser.providerData.some(function (p) { return p.providerId === 'password'; });
         if (!isPasswordProvider) {
             alert('Tu cuenta usa inicio de sesión con Google o GitHub, no tiene contraseña para cambiar.');
             return;
@@ -1070,13 +1093,21 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 <div class="bio-header"><i class="fas fa-users"></i><h3>Siguiendo</h3></div>
                 <div id="followingList"><p style="font-size:0.85rem;color:var(--text-secondary);">Aún no sigues a nadie.</p></div>
             </div>
+            <div class="profile-bio" id="followersCard" style="margin-top:1.5rem;">
+                <div class="bio-header"><i class="fas fa-user-friends"></i><h3>Te siguen</h3></div>
+                <div id="followersListEl"><p style="font-size:0.85rem;color:var(--text-secondary);">Nadie te sigue todavía.</p></div>
+            </div>
         `;
         profileBody.insertAdjacentHTML('beforeend', html);
 
         document.getElementById('userSearchBtn').addEventListener('click', handleUserSearch);
-        document.getElementById('userSearchInput').addEventListener('keydown', function(e) {
+        document.getElementById('userSearchInput').addEventListener('keydown', function (e) {
             if (e.key === 'Enter') { e.preventDefault(); handleUserSearch(); }
         });
+    }
+
+    function escapeForAttr(text) {
+        return String(text).replace(/'/g, "\\'");
     }
 
     function renderFollowingList(list) {
@@ -1086,11 +1117,32 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">Aún no sigues a nadie.</p>';
             return;
         }
-        container.innerHTML = list.map(function(u) {
+        container.innerHTML = list.map(function (u) {
             return `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);gap:0.4rem;flex-wrap:wrap;">
                     <div><strong>${u.name}</strong><div style="font-size:0.8rem;color:var(--text-secondary);">@${u.username}</div></div>
-                    <button class="btn btn-secondary btn-sm" onclick="toggleFollow('${u.uid}', '${u.name.replace(/'/g, "\\'")}', '${u.username}')">Dejar de seguir</button>
+                    <div style="display:flex;gap:0.4rem;">
+                        <button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Ver perfil</button>
+                        <button class="btn btn-secondary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Dejar de seguir</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderFollowersList(list) {
+        const container = document.getElementById('followersListEl');
+        if (!container) return;
+        if (list.length === 0) {
+            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">Nadie te sigue todavía.</p>';
+            return;
+        }
+        container.innerHTML = list.map(function (u) {
+            const yaLoSigo = followingSet.has(u.uid);
+            return `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);gap:0.4rem;flex-wrap:wrap;">
+                    <div><strong>${u.name}</strong><div style="font-size:0.8rem;color:var(--text-secondary);">@${u.username}</div></div>
+                    ${yaLoSigo ? '' : `<button class="btn btn-primary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Seguir de vuelta</button>`}
                 </div>
             `;
         }).join('');
@@ -1103,32 +1155,40 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             followingSet = new Set();
             const list = [];
             if (snap.exists()) {
-                snap.forEach(function(child) {
+                snap.forEach(function (child) {
                     followingSet.add(child.key);
                     const val = child.val();
                     list.push({ uid: child.key, name: val.name, username: val.username });
                 });
             }
             renderFollowingList(list);
+            actualizarStats();
+            buildChatContacts();
         } catch (err) {
             console.error('Error cargando seguidos:', err);
         }
     }
 
-    async function loadFollowersCount() {
-        if (!currentUser) return 0;
+    async function loadFollowers() {
+        if (!currentUser) return;
         try {
             const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/followers'));
-            return snap.exists() ? Object.keys(snap.val()).length : 0;
+            followersSet = new Set();
+            followersList = [];
+            if (snap.exists()) {
+                snap.forEach(function (child) {
+                    followersSet.add(child.key);
+                    const val = child.val();
+                    followersList.push({ uid: child.key, name: val.name, username: val.username });
+                });
+            }
+            followersCount = followersList.length;
+            renderFollowersList(followersList);
+            actualizarStats();
+            buildChatContacts();
         } catch (err) {
             console.error('Error cargando seguidores:', err);
-            return 0;
         }
-    }
-
-    async function refreshFollowersCount() {
-        followersCount = await loadFollowersCount();
-        actualizarStats();
     }
 
     function renderSearchResults(results) {
@@ -1137,12 +1197,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">No se encontraron usuarios.</p>';
             return;
         }
-        container.innerHTML = results.map(function(u) {
+        container.innerHTML = results.map(function (u) {
             const isFollowing = followingSet.has(u.uid);
             return `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);gap:0.4rem;flex-wrap:wrap;">
                     <div><strong>${u.name}</strong><div style="font-size:0.8rem;color:var(--text-secondary);">@${u.username}</div></div>
-                    <button class="btn ${isFollowing ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="toggleFollow('${u.uid}', '${u.name.replace(/'/g, "\\'")}', '${u.username}')">${isFollowing ? 'Dejar de seguir' : 'Seguir'}</button>
+                    <div style="display:flex;gap:0.4rem;">
+                        ${isFollowing ? `<button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Ver perfil</button>` : ''}
+                        <button class="btn ${isFollowing ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">${isFollowing ? 'Dejar de seguir' : 'Seguir'}</button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -1161,9 +1224,10 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const q = query(usersRef, where('username', '>=', term), where('username', '<=', term + '\uf8ff'));
             const snap = await getDocs(q);
             const results = [];
-            snap.forEach(function(docSnap) {
+            snap.forEach(function (docSnap) {
                 if (docSnap.id === currentUser.uid) return;
                 const data = docSnap.data();
+                if (!data.username || data.username.toLowerCase().indexOf(term) !== 0) return;
                 results.push({ uid: docSnap.id, name: data.name, username: data.username });
             });
             renderSearchResults(results);
@@ -1187,6 +1251,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 followingSet.add(uid);
             }
             await loadFollowing();
+            renderFollowersList(followersList);
             const term = document.getElementById('userSearchInput').value.trim().toLowerCase();
             if (term) handleUserSearch();
         } catch (err) {
@@ -1204,27 +1269,21 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const html = `
             <div class="panel-card" id="onlineUsersCard">
                 <div class="panel-card-header"><h3><i class="fas fa-circle" style="color:#2e7d32;font-size:0.6rem;"></i> Usuarios conectados</h3></div>
-                <div class="panel-card-body"><div id="onlineUsersList"></div></div>
+                <div class="panel-card-body">
+                    <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;">
+                        <span style="font-size:2rem;font-weight:700;color:var(--text-primary);" id="onlineUsersCount">0</span>
+                        <span style="color:var(--text-secondary);font-size:0.85rem;">usuarios conectados ahora mismo</span>
+                    </div>
+                    <p style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.25rem;"><i class="fas fa-lock"></i> Por privacidad no mostramos quiénes son.</p>
+                </div>
             </div>
         `;
         panelGrid.insertAdjacentHTML('beforeend', html);
     }
 
-    function renderOnlineUsers(list) {
-        const container = document.getElementById('onlineUsersList');
-        if (!container) return;
-        if (list.length === 0) {
-            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);padding:0.5rem 0;">No hay otros usuarios conectados ahora mismo.</p>';
-            return;
-        }
-        container.innerHTML = list.map(function(u) {
-            return `
-                <div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0;border-bottom:1px solid var(--border-color);">
-                    <span style="width:8px;height:8px;border-radius:50%;background:#2e7d32;display:inline-block;"></span>
-                    <div><strong>${u.name}</strong><div style="font-size:0.8rem;color:var(--text-secondary);">@${u.username}</div></div>
-                </div>
-            `;
-        }).join('');
+    function renderOnlineUsersCount(count) {
+        const el = document.getElementById('onlineUsersCount');
+        if (el) el.textContent = count;
     }
 
     function initPresence() {
@@ -1233,9 +1292,9 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const connectedRef = ref(rtdb, '.info/connected');
         presenceRefHandle = myPresenceRef;
 
-        onValue(connectedRef, function(snap) {
+        onValue(connectedRef, function (snap) {
             if (snap.val() === true) {
-                onDisconnect(myPresenceRef).remove().then(function() {
+                onDisconnect(myPresenceRef).remove().then(function () {
                     set(myPresenceRef, {
                         name: currentUserData.name,
                         username: currentUserData.username,
@@ -1246,17 +1305,264 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
 
         onlineListenerRef = ref(rtdb, 'presence');
-        onValue(onlineListenerRef, function(snap) {
-            const list = [];
-            snap.forEach(function(child) {
-                if (child.key !== currentUser.uid) {
-                    const val = child.val();
-                    list.push({ uid: child.key, name: val.name, username: val.username });
-                }
+        onValue(onlineListenerRef, function (snap) {
+            let count = 0;
+            snap.forEach(function (child) {
+                if (child.key !== currentUser.uid) count++;
             });
-            renderOnlineUsers(list);
+            renderOnlineUsersCount(count);
         });
     }
+
+    function puedeEscribirA(otherUid) {
+        return followersSet.has(otherUid);
+    }
+
+    function sortedPair(uid1, uid2) {
+        return uid1 < uid2 ? [uid1, uid2] : [uid2, uid1];
+    }
+
+    function chatMessagesPath(otherUid) {
+        const pair = sortedPair(currentUser.uid, otherUid);
+        return 'chats/' + pair[0] + '/' + pair[1] + '/messages';
+    }
+
+    function buildChatContacts() {
+        if (!currentUser) return;
+        const combined = new Map();
+        (followersList || []).forEach(function (u) { combined.set(u.uid, u); });
+
+        get(ref(rtdb, 'users/' + currentUser.uid + '/following')).then(function (snap) {
+            if (snap.exists()) {
+                snap.forEach(function (child) {
+                    const val = child.val();
+                    combined.set(child.key, { uid: child.key, name: val.name, username: val.username });
+                });
+            }
+            chatContacts = Array.from(combined.values());
+            renderChatContacts();
+        }).catch(function (err) {
+            console.error('Error preparando contactos de chat:', err);
+        });
+    }
+
+    function renderChatContacts() {
+        const container = document.getElementById('chatContactsList');
+        if (!container) return;
+        if (chatContacts.length === 0) {
+            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);padding:0.75rem;">Sigue a alguien o consigue seguidores para poder chatear.</p>';
+            return;
+        }
+        container.innerHTML = chatContacts.map(function (u) {
+            const canWrite = puedeEscribirA(u.uid);
+            return `
+                <div class="chat-contact-item" data-uid="${u.uid}" onclick="abrirChat('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')" style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.7rem;border-radius:10px;cursor:pointer;margin-bottom:0.2rem;">
+                    <div style="width:36px;height:36px;border-radius:50%;background:var(--primary,#1a2332);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;flex-shrink:0;">${u.name.charAt(0).toUpperCase()}</div>
+                    <div style="min-width:0;flex:1;">
+                        <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.name}</div>
+                        <div style="font-size:0.75rem;color:var(--text-secondary);">@${u.username}${canWrite ? '' : ' · no te sigue'}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function formatearHoraMensaje(timestamp) {
+        if (!timestamp) return '';
+        const fecha = new Date(timestamp);
+        return fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderChatMessages(messages) {
+        const container = document.getElementById('chatMessagesList');
+        if (!container) return;
+        if (messages.length === 0) {
+            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);text-align:center;margin-top:1rem;">No hay mensajes todavía. Escribe el primero.</p>';
+            return;
+        }
+        container.innerHTML = messages.map(function (m) {
+            const isMine = m.from === currentUser.uid;
+            return `
+                <div style="max-width:75%;padding:0.55rem 0.8rem;border-radius:12px;align-self:${isMine ? 'flex-end' : 'flex-start'};background:${isMine ? 'var(--primary,#1a2332)' : 'rgba(0,0,0,0.06)'};color:${isMine ? '#fff' : 'var(--text-primary,#1a2332)'};white-space:pre-wrap;font-size:0.88rem;">
+                    <div>${m.text}</div>
+                    <div style="font-size:0.68rem;opacity:0.7;text-align:right;margin-top:0.25rem;">${formatearHoraMensaje(m.createdAt)}</div>
+                </div>
+            `;
+        }).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function abrirChat(uid, name, username) {
+        if (currentChatUid && currentChatListenerRef) {
+            off(currentChatListenerRef);
+        }
+
+        currentChatUid = uid;
+
+        document.getElementById('chatEmptyState').style.display = 'none';
+        const activeWindow = document.getElementById('chatActiveWindow');
+        activeWindow.style.display = 'flex';
+
+        const header = document.getElementById('chatHeader');
+        header.innerHTML = `
+            <div>
+                <strong>${name}</strong>
+                <div style="font-size:0.8rem;color:var(--text-secondary);">@${username}</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${uid}', '${escapeForAttr(name)}', '${username}')">Ver perfil</button>
+        `;
+
+        const canWrite = puedeEscribirA(uid);
+        const inputArea = document.getElementById('chatInputArea');
+        const blockedNotice = document.getElementById('chatBlockedNotice');
+        if (canWrite) {
+            inputArea.style.display = 'flex';
+            blockedNotice.style.display = 'none';
+        } else {
+            inputArea.style.display = 'none';
+            blockedNotice.style.display = 'block';
+            blockedNotice.textContent = 'No puedes escribirle a este usuario todavía porque no te sigue.';
+        }
+
+        document.querySelectorAll('.chat-contact-item').forEach(function (el) {
+            el.style.background = el.dataset.uid === uid ? 'rgba(0,0,0,0.06)' : 'transparent';
+        });
+
+        const messagesRef = ref(rtdb, chatMessagesPath(uid));
+        currentChatListenerRef = messagesRef;
+        onValue(messagesRef, function (snap) {
+            const messages = [];
+            snap.forEach(function (child) {
+                const val = child.val();
+                messages.push({ id: child.key, from: val.from, text: val.text, createdAt: val.createdAt || 0 });
+            });
+            messages.sort(function (a, b) { return a.createdAt - b.createdAt; });
+            renderChatMessages(messages);
+        });
+    }
+
+    window.abrirChat = abrirChat;
+
+    async function enviarMensajeChat() {
+        const input = document.getElementById('chatMessageInput');
+        const text = input.value.trim();
+        if (!text || !currentChatUid) return;
+
+        if (!puedeEscribirA(currentChatUid)) {
+            alert('No puedes escribirle a este usuario porque no te sigue.');
+            return;
+        }
+
+        try {
+            const messagesRef = ref(rtdb, chatMessagesPath(currentChatUid));
+            const newRef = push(messagesRef);
+            await set(newRef, { from: currentUser.uid, text: text, createdAt: Date.now() });
+            input.value = '';
+        } catch (err) {
+            console.error('Error enviando mensaje:', err);
+            alert('No se pudo enviar el mensaje: ' + (err.code || err.message));
+        }
+    }
+
+    function initChatUI() {
+        const sendBtn = document.getElementById('chatSendBtn');
+        const input = document.getElementById('chatMessageInput');
+        if (sendBtn) sendBtn.addEventListener('click', enviarMensajeChat);
+        if (input) {
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); enviarMensajeChat(); }
+            });
+        }
+    }
+
+    function buildUserProfileModal() {
+        if (document.getElementById('userProfileOverlay')) return;
+        const html = `
+            <div class="modal-overlay" id="userProfileOverlay">
+                <div class="modal" style="max-width:520px;">
+                    <div class="modal-header">
+                        <h3 id="userProfileModalTitle">Perfil</h3>
+                        <button class="modal-close" id="userProfileClose">&times;</button>
+                    </div>
+                    <div class="modal-body" id="userProfileModalBody" style="max-height:60vh;overflow-y:auto;">
+                        <p style="text-align:center;color:var(--text-secondary);">Cargando...</p>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', html);
+        document.getElementById('userProfileClose').addEventListener('click', function () {
+            document.getElementById('userProfileOverlay').classList.remove('open');
+        });
+        document.getElementById('userProfileOverlay').addEventListener('click', function (e) {
+            if (e.target === this) this.classList.remove('open');
+        });
+    }
+
+    async function verPerfilUsuario(uid, name, username) {
+        if (!followingSet.has(uid)) {
+            alert('Solo puedes ver el perfil de las cuentas que sigues.');
+            return;
+        }
+
+        buildUserProfileModal();
+        const overlay = document.getElementById('userProfileOverlay');
+        const title = document.getElementById('userProfileModalTitle');
+        const body = document.getElementById('userProfileModalBody');
+        title.textContent = name + ' (@' + username + ')';
+        body.innerHTML = '<p style="text-align:center;color:var(--text-secondary);">Cargando...</p>';
+        overlay.classList.add('open');
+
+        try {
+            const [perfilSnap, postsSnap, clasesSnap] = await Promise.all([
+                get(ref(rtdb, 'users/' + uid + '/perfil')),
+                get(ref(rtdb, 'users/' + uid + '/posts')),
+                get(ref(rtdb, 'users/' + uid + '/clases'))
+            ]);
+
+            const perfil = perfilSnap.exists() ? perfilSnap.val() : {};
+            const postsArr = [];
+            if (postsSnap.exists()) postsSnap.forEach(function (c) { postsArr.push(c.val()); });
+            postsArr.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+            const clasesArr = [];
+            if (clasesSnap.exists()) clasesSnap.forEach(function (c) { clasesArr.push(c.val()); });
+
+            let html = '';
+            html += '<div style="margin-bottom:1.25rem;">';
+            html += '<h4 style="font-size:0.9rem;margin-bottom:0.4rem;"><i class="fas fa-pen"></i> Acerca de</h4>';
+            html += '<p style="font-size:0.88rem;color:var(--text-secondary);">' + (perfil.bio || 'Sin descripción.') + '</p>';
+            html += '</div>';
+
+            html += '<div style="margin-bottom:1.25rem;">';
+            html += '<h4 style="font-size:0.9rem;margin-bottom:0.4rem;"><i class="fas fa-calendar-alt"></i> Horario (' + clasesArr.length + ')</h4>';
+            if (clasesArr.length === 0) {
+                html += '<p style="font-size:0.85rem;color:var(--text-secondary);">Sin clases registradas.</p>';
+            } else {
+                clasesArr.forEach(function (c) {
+                    html += '<div style="font-size:0.85rem;padding:0.3rem 0;border-bottom:1px solid var(--border-color);">' + c.nombre + ' · ' + c.dias.join(', ') + ' · ' + c.horaInicio + '-' + c.horaFin + '</div>';
+                });
+            }
+            html += '</div>';
+
+            html += '<div>';
+            html += '<h4 style="font-size:0.9rem;margin-bottom:0.4rem;"><i class="fas fa-newspaper"></i> Notas (' + postsArr.length + ')</h4>';
+            if (postsArr.length === 0) {
+                html += '<p style="font-size:0.85rem;color:var(--text-secondary);">Sin notas.</p>';
+            } else {
+                postsArr.forEach(function (p) {
+                    html += '<div style="font-size:0.85rem;padding:0.5rem 0;border-bottom:1px solid var(--border-color);"><div style="color:var(--text-secondary);font-size:0.75rem;">' + p.fecha + '</div>' + p.texto + '</div>';
+                });
+            }
+            html += '</div>';
+
+            body.innerHTML = html;
+        } catch (err) {
+            console.error('Error cargando perfil de usuario:', err);
+            body.innerHTML = '<p style="text-align:center;color:#dc3545;">No se pudo cargar el perfil: ' + (err.code || err.message) + '</p>';
+        }
+    }
+
+    window.verPerfilUsuario = verPerfilUsuario;
 
     function appendAssistantMessage(role, text) {
         const container = document.getElementById('assistantMessages');
@@ -1350,15 +1656,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         `;
         document.body.insertAdjacentHTML('beforeend', html);
 
-        document.getElementById('assistantButton').addEventListener('click', function() {
+        document.getElementById('assistantButton').addEventListener('click', function () {
             const panel = document.getElementById('assistantPanel');
             panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
         });
-        document.getElementById('assistantCloseBtn').addEventListener('click', function() {
+        document.getElementById('assistantCloseBtn').addEventListener('click', function () {
             document.getElementById('assistantPanel').style.display = 'none';
         });
         document.getElementById('assistantSendBtn').addEventListener('click', sendAssistantMessage);
-        document.getElementById('assistantInput').addEventListener('keydown', function(e) {
+        document.getElementById('assistantInput').addEventListener('keydown', function (e) {
             if (e.key === 'Enter') { e.preventDefault(); sendAssistantMessage(); }
         });
 
@@ -1366,13 +1672,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (menuToggle) {
-        menuToggle.addEventListener('click', function(e) {
+        menuToggle.addEventListener('click', function (e) {
             e.stopPropagation();
             sidebar.classList.toggle('open');
         });
     }
 
-    document.addEventListener('click', function(e) {
+    document.addEventListener('click', function (e) {
         if (window.innerWidth <= 768) {
             const isSidebar = sidebar.contains(e.target);
             const isMenuToggle = menuToggle.contains(e.target);
@@ -1383,7 +1689,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     });
 
     navLinks.forEach(link => {
-        link.addEventListener('click', function(e) {
+        link.addEventListener('click', function (e) {
             e.preventDefault();
             const sectionId = this.dataset.section;
             navigateTo(`section-${sectionId}`);
@@ -1391,24 +1697,24 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     });
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', function() {
+        logoutBtn.addEventListener('click', function () {
             if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
                 if (presenceRefHandle) remove(presenceRefHandle);
                 signOut(auth)
-                    .then(function() { window.location.href = '../html/login.html'; })
-                    .catch(function() { window.location.href = '../html/login.html'; });
+                    .then(function () { window.location.href = '../html/login.html'; })
+                    .catch(function () { window.location.href = '../html/login.html'; });
             }
         });
     }
 
     if (notifBtn) {
-        notifBtn.addEventListener('click', function(e) {
+        notifBtn.addEventListener('click', function (e) {
             e.stopPropagation();
             notifDropdown.classList.toggle('open');
             actualizarBadge();
         });
 
-        document.addEventListener('click', function(e) {
+        document.addEventListener('click', function (e) {
             if (!notifBtn.contains(e.target) && !notifDropdown.contains(e.target)) {
                 notifDropdown.classList.remove('open');
             }
@@ -1416,7 +1722,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         const notifTabs = document.querySelectorAll('.notif-tab');
         notifTabs.forEach(tab => {
-            tab.addEventListener('click', function() {
+            tab.addEventListener('click', function () {
                 notifTabs.forEach(t => t.classList.remove('active'));
                 this.classList.add('active');
                 const target = this.dataset.tab;
@@ -1427,7 +1733,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
 
         document.querySelectorAll('.notif-mark-all').forEach(btn => {
-            btn.addEventListener('click', function() {
+            btn.addEventListener('click', function () {
                 const panel = this.closest('.notif-panel');
                 if (panel) panel.querySelectorAll('.notif-item.unread').forEach(item => item.classList.remove('unread'));
                 actualizarBadge();
@@ -1436,7 +1742,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (saveProfileBtn) {
-        saveProfileBtn.addEventListener('click', async function() {
+        saveProfileBtn.addEventListener('click', async function () {
             const name = editName.value.trim();
             const email = editEmail.value.trim();
 
@@ -1519,13 +1825,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (startCameraBtn) {
-        startCameraBtn.addEventListener('click', function() {
+        startCameraBtn.addEventListener('click', function () {
             if (cameraActive) stopCamera(); else startCamera();
         });
     }
 
     if (captureBtn) {
-        captureBtn.addEventListener('click', function() {
+        captureBtn.addEventListener('click', function () {
             if (!cameraActive || !videoFeed.srcObject) return;
 
             captureCount++;
@@ -1548,7 +1854,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (switchCameraBtn) {
-        switchCameraBtn.addEventListener('click', function() {
+        switchCameraBtn.addEventListener('click', function () {
             facingMode = facingMode === 'user' ? 'environment' : 'user';
             if (cameraActive) startCamera();
         });
@@ -1556,13 +1862,212 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     const newProjectBtn = document.getElementById('newProjectBtn');
     if (newProjectBtn) {
-        newProjectBtn.addEventListener('click', function() {
+        newProjectBtn.addEventListener('click', function () {
             alert('Los proyectos se crean manualmente en la carpeta html/proyectos/\n\n' +
                 'Para agregar un nuevo proyecto:\n' +
                 '1. Crea un archivo .html en html/proyectos/\n' +
                 '2. Agrega el nombre del proyecto en la lista de proyectos en config.js\n' +
                 '3. Recarga la página');
         });
+    }
+
+    async function cargarNotifSettings() {
+        if (!currentUser) return;
+        try {
+            const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/settings/notificaciones'));
+            if (snap.exists()) {
+                const val = snap.val();
+                notifSettings = {
+                    live: val.live !== false,
+                    sistema: val.sistema !== false
+                };
+            }
+        } catch (err) {
+            console.error('Error cargando preferencias de notificaciones:', err);
+        }
+    }
+
+    async function guardarNotifSettings() {
+        try {
+            await set(ref(rtdb, 'users/' + currentUser.uid + '/settings/notificaciones'), notifSettings);
+        } catch (err) {
+            console.error('Error guardando preferencias de notificaciones:', err);
+            alert('No se pudieron guardar las preferencias: ' + (err.code || err.message));
+        }
+    }
+
+    function buildNotifSettingsModal() {
+        if (document.getElementById('notifSettingsOverlay')) return;
+        const html = `
+            <div class="modal-overlay" id="notifSettingsOverlay">
+                <div class="modal">
+                    <div class="modal-header">
+                        <h3>Preferencias de notificación</h3>
+                        <button class="modal-close" id="notifSettingsClose">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
+                                <input type="checkbox" id="notifLiveToggle" style="width:18px;height:18px;" />
+                                Notificaciones en vivo (clases próximas, en curso)
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
+                                <input type="checkbox" id="notifSistemaToggle" style="width:18px;height:18px;" />
+                                Notificaciones del sistema (cambios en tu horario)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-cancel" id="notifSettingsCancel">Cerrar</button>
+                        <button class="btn btn-save" id="notifSettingsSave">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', html);
+
+        document.getElementById('notifSettingsClose').addEventListener('click', closeNotifSettingsModal);
+        document.getElementById('notifSettingsCancel').addEventListener('click', closeNotifSettingsModal);
+        document.getElementById('notifSettingsOverlay').addEventListener('click', function (e) {
+            if (e.target === this) closeNotifSettingsModal();
+        });
+        document.getElementById('notifSettingsSave').addEventListener('click', async function () {
+            const btn = this;
+            notifSettings.live = document.getElementById('notifLiveToggle').checked;
+            notifSettings.sistema = document.getElementById('notifSistemaToggle').checked;
+            btn.disabled = true;
+            btn.textContent = 'Guardando...';
+            await guardarNotifSettings();
+            btn.disabled = false;
+            btn.textContent = 'Guardar';
+            closeNotifSettingsModal();
+        });
+    }
+
+    function openNotifSettingsModal() {
+        buildNotifSettingsModal();
+        document.getElementById('notifLiveToggle').checked = notifSettings.live;
+        document.getElementById('notifSistemaToggle').checked = notifSettings.sistema;
+        document.getElementById('notifSettingsOverlay').classList.add('open');
+    }
+
+    function closeNotifSettingsModal() {
+        const overlay = document.getElementById('notifSettingsOverlay');
+        if (overlay) overlay.classList.remove('open');
+    }
+
+    async function exportarDatosUsuario() {
+        const exportBtn = document.getElementById('exportDataBtn');
+        if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = 'Generando...'; }
+
+        try {
+            const perfilSnap = await get(ref(rtdb, 'users/' + currentUser.uid + '/perfil'));
+            const postsSnap = await get(ref(rtdb, 'users/' + currentUser.uid + '/posts'));
+            const clasesSnap = await get(ref(rtdb, 'users/' + currentUser.uid + '/clases'));
+            const followingSnap = await get(ref(rtdb, 'users/' + currentUser.uid + '/following'));
+            const followersSnap = await get(ref(rtdb, 'users/' + currentUser.uid + '/followers'));
+
+            const perfil = perfilSnap.exists() ? perfilSnap.val() : {};
+            const postsData = [];
+            if (postsSnap.exists()) postsSnap.forEach(function (c) { postsData.push(c.val()); });
+            const clasesData = [];
+            if (clasesSnap.exists()) clasesSnap.forEach(function (c) { clasesData.push(c.val()); });
+            const followingData = [];
+            if (followingSnap.exists()) followingSnap.forEach(function (c) { followingData.push(c.val()); });
+            const followersData = [];
+            if (followersSnap.exists()) followersSnap.forEach(function (c) { followersData.push(c.val()); });
+
+            const ahora = new Date().toLocaleString('es-ES');
+            const linea = '========================================';
+
+            let contenido = '';
+            contenido += linea + '\n';
+            contenido += '  BOTARDO FACE APP - EXPORTACIÓN DE DATOS\n';
+            contenido += linea + '\n';
+            contenido += 'Generado: ' + ahora + '\n\n';
+
+            contenido += linea + '\n';
+            contenido += 'DATOS DE LA CUENTA\n';
+            contenido += linea + '\n';
+            contenido += 'Nombre: ' + (currentUserData.name || '-') + '\n';
+            contenido += 'Usuario: @' + (currentUserData.username || '-') + '\n';
+            contenido += 'Correo: ' + (currentUserData.email || '-') + '\n';
+            contenido += 'Cuenta creada: ' + (currentUserData.createdAt || '-') + '\n\n';
+
+            contenido += linea + '\n';
+            contenido += 'PERFIL\n';
+            contenido += linea + '\n';
+            contenido += 'Descripción: ' + (perfil.bio || 'Sin descripción') + '\n';
+            contenido += 'Emoji de estado: ' + (perfil.emoji || '-') + '\n\n';
+
+            contenido += linea + '\n';
+            contenido += 'NOTAS (' + postsData.length + ')\n';
+            contenido += linea + '\n';
+            if (postsData.length === 0) {
+                contenido += 'No tienes notas guardadas.\n\n';
+            } else {
+                postsData.forEach(function (p, i) {
+                    contenido += '[' + (i + 1) + '] ' + p.fecha + '\n';
+                    contenido += p.texto + '\n\n';
+                });
+            }
+
+            contenido += linea + '\n';
+            contenido += 'HORARIO DE CLASES (' + clasesData.length + ')\n';
+            contenido += linea + '\n';
+            if (clasesData.length === 0) {
+                contenido += 'No tienes clases registradas.\n\n';
+            } else {
+                clasesData.forEach(function (c) {
+                    contenido += '- ' + c.nombre + ' | ' + c.dias.join(', ') + ' | ' + c.horaInicio + ' a ' + c.horaFin + '\n';
+                });
+                contenido += '\n';
+            }
+
+            contenido += linea + '\n';
+            contenido += 'SIGUIENDO (' + followingData.length + ')\n';
+            contenido += linea + '\n';
+            if (followingData.length === 0) {
+                contenido += 'No sigues a nadie.\n\n';
+            } else {
+                followingData.forEach(function (f) {
+                    contenido += '- ' + f.name + ' (@' + f.username + ')\n';
+                });
+                contenido += '\n';
+            }
+
+            contenido += linea + '\n';
+            contenido += 'SEGUIDORES (' + followersData.length + ')\n';
+            contenido += linea + '\n';
+            if (followersData.length === 0) {
+                contenido += 'Nadie te sigue todavía.\n\n';
+            } else {
+                followersData.forEach(function (f) {
+                    contenido += '- ' + f.name + ' (@' + f.username + ')\n';
+                });
+                contenido += '\n';
+            }
+
+            contenido += linea + '\n';
+            contenido += 'Fin del reporte.\n';
+
+            const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'botardo_datos_' + (currentUserData.username || 'usuario') + '.txt';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Error exportando datos:', err);
+            alert('No se pudieron exportar los datos: ' + (err.code || err.message));
+        } finally {
+            if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Exportar datos'; }
+        }
     }
 
     window.editarClase = editarClase;
@@ -1578,21 +2083,30 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         initPerfil();
         buildSocialUI();
         loadFollowing();
-        refreshFollowersCount();
+        loadFollowers();
         buildOnlineUsersCard();
         initPresence();
         buildAssistantUI();
+        cargarNotifSettings();
+        initChatUI();
 
         updateCameraStatus(false, 'Desconectada');
 
         const changePasswordBtn = document.getElementById('changePasswordBtn');
         if (changePasswordBtn) changePasswordBtn.addEventListener('click', openChangePasswordModal);
 
+        const manageNotifBtn = document.getElementById('manageNotifBtn');
+        if (manageNotifBtn) manageNotifBtn.addEventListener('click', openNotifSettingsModal);
+
+        const exportDataBtn = document.getElementById('exportDataBtn');
+        if (exportDataBtn) exportDataBtn.addEventListener('click', exportarDatosUsuario);
+
         const hash = window.location.hash.replace('#', '');
         if (hash) {
             const sectionMap = {
                 'panel': 'section-panel',
                 'perfil': 'section-perfil',
+                'mensajes': 'section-mensajes',
                 'clases': 'section-clases',
                 'camara': 'section-camara',
                 'proyectos': 'section-proyectos',
@@ -1605,12 +2119,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     let resizeTimer;
-    window.addEventListener('resize', function() {
+    window.addEventListener('resize', function () {
         clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {}, 250);
+        resizeTimer = setTimeout(() => { }, 250);
     });
 
-    onAuthStateChanged(auth, function(user) {
+    onAuthStateChanged(auth, function (user) {
         if (!user) {
             window.location.href = '../html/login.html';
             return;

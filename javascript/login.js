@@ -388,7 +388,7 @@ import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, s
         btn.textContent = 'Verificando usuario...';
         btn.disabled = true;
 
-        const username = regUsername.value.trim();
+        const username = regUsername.value.trim().toLowerCase();
 
         var taken;
         try {
