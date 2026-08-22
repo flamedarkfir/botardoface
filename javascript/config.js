@@ -1,7 +1,8 @@
+import { auth, db, onAuthStateChanged, signOut, doc, getDoc, setDoc, collection, query, where, getDocs } from './firebase-config.js';
+
 (function() {
     'use strict';
 
-    // ===== perfil  =====
     let posts = [];
     let bioText = 'Aún no has agregado una descripción.';
     let statusEmoji = '😊';
@@ -185,13 +186,8 @@
     window.eliminarPost = eliminarPost;
     window.agregarPost = agregarPost;
 
-    // ===== datos de usuario =====
-    const userData = {
-        name: 'Usuario',
-        email: 'usuario@ejemplo.com',
-        phone: '+57 300 000 0000',
-        role: 'Alumno'
-    };
+    let currentUser = null;
+    let currentUserData = null;
 
     const proyectos = [
         { nombre: 'camara', icono: 'fa-camera', descripcion: 'Reconocimiento facial en tiempo real' }
@@ -267,40 +263,31 @@
 
     let clases = [];
 
-    // ===== navegación =====
     function navigateTo(sectionId) {
-        const sectionName = sectionId.replace('section-', '');
-        const titles = {
-            panel: 'Panel',
-            perfil: 'Perfil',
-            clases: 'Horario',
-            camara: 'Cámara',
-            proyectos: 'Proyectos',
-            estadisticas: 'Estadísticas',
-            configuracion: 'Configuración'
-        };
-
-        sections.forEach(s => s.classList.remove('active'));
+        sections.forEach(section => section.classList.remove('active'));
         const target = document.getElementById(sectionId);
         if (target) target.classList.add('active');
 
-        navLinks.forEach(link => {
-            link.parentElement.classList.remove('active');
-            if (link.dataset.section === sectionName) {
-                link.parentElement.classList.add('active');
-            }
-        });
+        navLinks.forEach(link => link.parentElement.classList.remove('active'));
+        const activeLink = document.querySelector(`.sidebar-nav a[data-section="${sectionId.replace('section-', '')}"]`);
+        if (activeLink) activeLink.parentElement.classList.add('active');
 
-        pageTitle.textContent = titles[sectionName] || sectionName;
+        const titles = {
+            'section-panel': 'Panel',
+            'section-perfil': 'Perfil',
+            'section-clases': 'Horario',
+            'section-camara': 'Cámara',
+            'section-proyectos': 'Proyectos',
+            'section-estadisticas': 'Estadísticas',
+            'section-configuracion': 'Configuración'
+        };
+        if (pageTitle && titles[sectionId]) pageTitle.textContent = titles[sectionId];
 
         if (window.innerWidth <= 768) {
             sidebar.classList.remove('open');
         }
-
-        notifDropdown.classList.remove('open');
     }
 
-    // ===== proyectos =====
     function loadProjects() {
         if (!projectsGrid) return;
         projectsGrid.innerHTML = '';
@@ -317,22 +304,25 @@
         });
     }
 
-    // ===== usuario =====
     function loadUserData() {
-        const storedName = localStorage.getItem('botardo_user_name');
-        const storedEmail = localStorage.getItem('botardo_user_email');
-        const storedPhone = localStorage.getItem('botardo_user_phone');
+        const data = currentUserData || { name: 'Usuario', username: 'usuario', email: '' };
 
-        const name = storedName || userData.name;
-        const email = storedEmail || userData.email;
-        const phone = storedPhone || userData.phone;
+        const userNameDisplay = document.getElementById('userNameDisplay');
+        if (userNameDisplay) userNameDisplay.textContent = data.name;
 
-        document.getElementById('userNameDisplay').textContent = name;
-        document.getElementById('profileName').textContent = name;
-        document.querySelector('.user-role').textContent = 'Alumno';
+        const profileNameEl = document.getElementById('profileName');
+        if (profileNameEl) profileNameEl.textContent = data.name;
+
+        const profileUsernameEl = document.getElementById('profileUsername');
+        if (profileUsernameEl) profileUsernameEl.textContent = '@' + data.username;
+
+        const profileEmailEl = document.getElementById('profileEmail');
+        if (profileEmailEl) profileEmailEl.textContent = data.email;
+
+        const userRoleEl = document.querySelector('.user-role');
+        if (userRoleEl) userRoleEl.textContent = 'Alumno';
     }
 
-    // ===== estadisticas =====
     function updateStats() {
         const now = Date.now();
         const deltaTime = (now - lastUpdateTime) / 1000;
@@ -370,7 +360,6 @@
         }
     }
 
-    // ===== horario  =====
     function cargarClases() {
         const stored = localStorage.getItem('botardo_clases');
         if (stored) {
@@ -501,7 +490,6 @@
         agregarNotificacionSistema('Clase eliminada', `Has eliminado una clase del horario`);
     }
 
-    // ===== notificaciones =====
     function agregarNotificacionSistema(titulo, mensaje) {
         const list = document.querySelector('#notifSistema .notif-list');
         if (!list) return;
@@ -555,7 +543,6 @@
         }
     }
 
-    // ===== modal clases =====
     function abrirModal(clase = null) {
         const overlay = document.getElementById('modalOverlay');
         if (!overlay) {
@@ -788,7 +775,6 @@
         renderizarHorario();
     }
 
-    // ===== eventos =====
     if (menuToggle) {
         menuToggle.addEventListener('click', function(e) {
             e.stopPropagation();
@@ -817,9 +803,15 @@
     if (logoutBtn) {
         logoutBtn.addEventListener('click', function() {
             if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
-                localStorage.removeItem('botardo_remember');
-                localStorage.removeItem('botardo_email');
-                window.location.href = '../html/login.html';
+                signOut(auth)
+                    .then(function() {
+                        localStorage.removeItem('botardo_remember');
+                        localStorage.removeItem('botardo_email');
+                        window.location.href = '../html/login.html';
+                    })
+                    .catch(function() {
+                        window.location.href = '../html/login.html';
+                    });
             }
         });
     }
@@ -864,10 +856,9 @@
     }
 
     if (saveProfileBtn) {
-        saveProfileBtn.addEventListener('click', function() {
+        saveProfileBtn.addEventListener('click', async function() {
             const name = editName.value.trim();
             const email = editEmail.value.trim();
-            const phone = editPhone.value.trim();
 
             if (!name || !email) {
                 alert('Por favor completa los campos obligatorios.');
@@ -879,19 +870,23 @@
                 return;
             }
 
-            localStorage.setItem('botardo_user_name', name);
-            localStorage.setItem('botardo_user_email', email);
-            localStorage.setItem('botardo_user_phone', phone);
-
-            document.getElementById('userNameDisplay').textContent = name;
-            document.getElementById('profileName').textContent = name;
-            document.getElementById('profileEmail').textContent = email;
-
-            alert('¡Perfil actualizado correctamente!');
+            try {
+                await setDoc(doc(db, 'users', currentUser.uid), {
+                    name: name,
+                    username: currentUserData.username,
+                    email: email,
+                    createdAt: currentUserData.createdAt || new Date().toISOString()
+                });
+                currentUserData.name = name;
+                currentUserData.email = email;
+                loadUserData();
+                alert('¡Perfil actualizado correctamente!');
+            } catch (err) {
+                alert('No se pudo actualizar el perfil. Intenta de nuevo.');
+            }
         });
     }
 
-    // ===== camara =====
     let stream = null;
     let cameraActive = false;
     let facingMode = 'user';
@@ -1015,7 +1010,6 @@
         });
     }
 
-    // ===== tema oscuro =====
     let darkMode = false;
 
     if (themeToggle) {
@@ -1039,7 +1033,6 @@
         });
     }
 
-    // ===== proyectos =====
     const newProjectBtn = document.getElementById('newProjectBtn');
     if (newProjectBtn) {
         newProjectBtn.addEventListener('click', function() {
@@ -1051,7 +1044,6 @@
         });
     }
 
-    // ===== funciones globales =====
     window.editarClase = editarClase;
     window.eliminarClase = eliminarClase;
     window.abrirModal = abrirModal;
@@ -1060,7 +1052,6 @@
     window.eliminarPost = eliminarPost;
     window.agregarPost = agregarPost;
 
-    // ===== init =====
     function init() {
         loadUserData();
         loadProjects();
@@ -1083,7 +1074,193 @@
             const target = sectionMap[hash];
             if (target) navigateTo(target);
         }
+    }
 
+    async function isUsernameTakenByOther(username, uid) {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('username', '==', username));
+        const snapshot = await getDocs(q);
+        let taken = false;
+        snapshot.forEach(function(docSnap) {
+            if (docSnap.id !== uid) taken = true;
+        });
+        return taken;
+    }
+
+    async function generateUsernameSuggestions(base, uid) {
+        const clean = (base.toLowerCase().replace(/[^a-z]/g, '')) || 'usuario';
+        const candidates = [
+            clean + Math.floor(Math.random() * 900 + 100),
+            clean + '_' + Math.floor(Math.random() * 90 + 10),
+            clean + new Date().getFullYear(),
+            clean + Math.floor(Math.random() * 9000 + 1000),
+            clean + '_' + Math.floor(Math.random() * 900 + 100),
+            clean + Math.floor(Math.random() * 90 + 10)
+        ];
+        const suggestions = [];
+        for (let i = 0; i < candidates.length; i++) {
+            if (suggestions.length >= 3) break;
+            const taken = await isUsernameTakenByOther(candidates[i], uid);
+            if (!taken && suggestions.indexOf(candidates[i]) === -1) {
+                suggestions.push(candidates[i]);
+            }
+        }
+        return suggestions;
+    }
+
+    function buildCompleteDataModal() {
+        if (document.getElementById('completeDataOverlay')) return;
+        const modalHTML = `
+            <div class="modal-overlay open" id="completeDataOverlay" style="z-index:5000;">
+                <div class="modal">
+                    <div class="modal-header">
+                        <h3>Completa tus datos</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1rem;">Necesitamos estos datos para activar tu cuenta.</p>
+                        <div class="form-group">
+                            <label>Nombres y Apellidos</label>
+                            <input type="text" id="completeName" placeholder="Ej: Juan Camilo Pérez Muñoz" />
+                            <div id="completeNameError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Nombre de usuario</label>
+                            <input type="text" id="completeUsername" placeholder="Ej: juan007" />
+                            <div id="completeUsernameError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Correo electrónico</label>
+                            <input type="email" id="completeEmail" placeholder="Ej: ejemplo@gmail.com" />
+                            <div id="completeEmailError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-save" id="completeDataSaveBtn">Guardar y continuar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    function showCompleteDataModal(user, existingData) {
+        buildCompleteDataModal();
+
+        const overlay = document.getElementById('completeDataOverlay');
+        const nameInput = document.getElementById('completeName');
+        const usernameInput = document.getElementById('completeUsername');
+        const emailInput = document.getElementById('completeEmail');
+        const nameError = document.getElementById('completeNameError');
+        const usernameError = document.getElementById('completeUsernameError');
+        const emailError = document.getElementById('completeEmailError');
+        const saveBtn = document.getElementById('completeDataSaveBtn');
+
+        nameInput.value = (existingData && existingData.name) || user.displayName || '';
+        usernameInput.value = (existingData && existingData.username) || '';
+        emailInput.value = (existingData && existingData.email) || user.email || '';
+
+        overlay.classList.add('open');
+
+        saveBtn.onclick = async function() {
+            nameError.textContent = '';
+            usernameError.textContent = '';
+            emailError.textContent = '';
+
+            const name = nameInput.value.trim();
+            const username = usernameInput.value.trim();
+            const email = emailInput.value.trim();
+
+            let valid = true;
+
+            if (name.length < 2) {
+                nameError.textContent = 'Ingresa un nombre válido (mínimo 2 caracteres).';
+                valid = false;
+            }
+
+            const latinRegex = /^[A-Za-z]+$/;
+            if (username === '') {
+                usernameError.textContent = 'El nombre de usuario es obligatorio.';
+                valid = false;
+            } else if (!latinRegex.test(username)) {
+                usernameError.textContent = 'Solo letras A-Z, a-z (sin ñ, números ni símbolos).';
+                valid = false;
+            } else if (username.length < 3) {
+                usernameError.textContent = 'Mínimo 3 caracteres.';
+                valid = false;
+            }
+
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                emailError.textContent = 'Ingresa un correo válido.';
+                valid = false;
+            }
+
+            if (!valid) return;
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Verificando...';
+
+            try {
+                const taken = await isUsernameTakenByOther(username, user.uid);
+                if (taken) {
+                    const suggestions = await generateUsernameSuggestions(username, user.uid);
+                    usernameError.textContent = suggestions.length > 0
+                        ? 'Este nombre de usuario ya está en uso. Sugerencias: ' + suggestions.join(', ')
+                        : 'Este nombre de usuario ya está en uso.';
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Guardar y continuar';
+                    return;
+                }
+            } catch (err) {
+                console.error('Error verificando username:', err);
+                usernameError.textContent = 'No se pudo verificar el usuario: ' + (err.code || err.message || err);
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Guardar y continuar';
+                return;
+            }
+
+            saveBtn.textContent = 'Guardando...';
+
+            try {
+                await setDoc(doc(db, 'users', user.uid), {
+                    name: name,
+                    username: username,
+                    email: email,
+                    createdAt: (existingData && existingData.createdAt) || new Date().toISOString()
+                });
+
+                currentUserData = { name: name, username: username, email: email };
+                overlay.classList.remove('open');
+                overlay.remove();
+                init();
+            } catch (err) {
+                console.error('Error guardando datos en Firestore:', err);
+                emailError.textContent = 'No se pudo guardar: ' + (err.code || err.message || err);
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Guardar y continuar';
+            }
+        };
+    }
+
+    async function loadOrRequestUserData(user) {
+        try {
+            const ref = doc(db, 'users', user.uid);
+            const snap = await getDoc(ref);
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data.name && data.username && data.email) {
+                    currentUserData = data;
+                    init();
+                    return;
+                }
+                showCompleteDataModal(user, data);
+                return;
+            }
+            showCompleteDataModal(user, null);
+        } catch (err) {
+            console.error('Error leyendo datos de Firestore:', err);
+            showCompleteDataModal(user, null);
+        }
     }
 
     let resizeTimer;
@@ -1092,10 +1269,13 @@
         resizeTimer = setTimeout(() => {}, 250);
     });
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
+    onAuthStateChanged(auth, function(user) {
+        if (!user) {
+            window.location.href = '../html/login.html';
+            return;
+        }
+        currentUser = user;
+        loadOrRequestUserData(user);
+    });
 
 })();

@@ -1,3 +1,5 @@
+import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, googleProvider, githubProvider, doc, setDoc, collection, query, where, getDocs } from './firebase-config.js';
+
 (function() {
     'use strict';
 
@@ -212,6 +214,34 @@
         return true;
     }
 
+    async function isUsernameTaken(username) {
+        var usersRef = collection(db, 'users');
+        var q = query(usersRef, where('username', '==', username));
+        var snapshot = await getDocs(q);
+        return !snapshot.empty;
+    }
+
+    async function generateUsernameSuggestions(base) {
+        var clean = base.toLowerCase();
+        var candidates = [
+            clean + Math.floor(Math.random() * 900 + 100),
+            clean + '_' + Math.floor(Math.random() * 90 + 10),
+            clean + new Date().getFullYear(),
+            clean + Math.floor(Math.random() * 9000 + 1000),
+            clean + '_' + Math.floor(Math.random() * 900 + 100),
+            clean + Math.floor(Math.random() * 90 + 10)
+        ];
+        var suggestions = [];
+        for (var i = 0; i < candidates.length; i++) {
+            if (suggestions.length >= 3) break;
+            var taken = await isUsernameTaken(candidates[i]);
+            if (!taken && suggestions.indexOf(candidates[i]) === -1) {
+                suggestions.push(candidates[i]);
+            }
+        }
+        return suggestions;
+    }
+
     regName.addEventListener('blur', function() { validateRegName(this.value); });
     regName.addEventListener('input', function() {
         if (this.value.trim() === '') {
@@ -296,23 +326,46 @@
         btn.textContent = 'Verificando...';
         btn.disabled = true;
 
-        setTimeout(function() {
-            if (rememberCheck.checked) {
-                localStorage.setItem('botardo_remember', 'true');
-                localStorage.setItem('botardo_email', emailInput.value.trim());
-            } else {
-                localStorage.removeItem('botardo_remember');
-                localStorage.removeItem('botardo_email');
-            }
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
 
-            window.location.href = '../html/dashboard.html';
-
-            btn.textContent = originalText;
-            btn.disabled = false;
-        }, 1200);
+        signInWithEmailAndPassword(auth, email, password)
+            .then((userCredential) => {
+                const user = userCredential.user;
+                if (rememberCheck.checked) {
+                    localStorage.setItem('botardo_remember', 'true');
+                    localStorage.setItem('botardo_email', email);
+                } else {
+                    localStorage.removeItem('botardo_remember');
+                    localStorage.removeItem('botardo_email');
+                }
+                window.location.href = '../html/dashboard.html';
+            })
+            .catch((error) => {
+                const errorCode = error.code;
+                const errorMessage = error.message;
+                if (errorCode === 'auth/user-not-found') {
+                    emailError.textContent = 'No existe una cuenta con este correo.';
+                    emailInput.style.borderColor = '#dc3545';
+                } else if (errorCode === 'auth/wrong-password') {
+                    passwordError.textContent = 'Contraseña incorrecta.';
+                    passwordInput.style.borderColor = '#dc3545';
+                } else if (errorCode === 'auth/invalid-credential') {
+                    emailError.textContent = 'Credenciales inválidas.';
+                    emailInput.style.borderColor = '#dc3545';
+                } else if (errorCode === 'auth/too-many-requests') {
+                    passwordError.textContent = 'Demasiados intentos. Intenta más tarde.';
+                    passwordInput.style.borderColor = '#dc3545';
+                } else {
+                    emailError.textContent = 'Error: ' + errorMessage;
+                    emailInput.style.borderColor = '#dc3545';
+                }
+                btn.textContent = originalText;
+                btn.disabled = false;
+            });
     });
 
-    registerForm.addEventListener('submit', function(e) {
+    registerForm.addEventListener('submit', async function(e) {
         e.preventDefault();
 
         var isNameValid = validateRegName(regName.value);
@@ -330,29 +383,73 @@
             return;
         }
 
-        var btn = this.querySelector('.btn-primary');
+        var btn = registerForm.querySelector('.btn-primary');
         var originalText = btn.textContent;
-        btn.textContent = 'Registrando...';
+        btn.textContent = 'Verificando usuario...';
         btn.disabled = true;
 
-        setTimeout(function() {
-            var nombre = regName.value.trim();
-            var usuario = regUsername.value.trim();
-            var email = regEmail.value.trim();
+        const username = regUsername.value.trim();
 
-            alert('¡Bienvenid@ ' + nombre + '! Tu usuario "' + usuario + '" ha sido registrado con éxito.');
-
-            registerPanel.style.display = 'none';
-            loginPanel.style.display = 'block';
-
-            emailInput.value = email;
-            validateLoginEmail(email);
-
-            document.querySelector('.login-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-
+        var taken;
+        try {
+            taken = await isUsernameTaken(username);
+        } catch (err) {
+            console.error('Error verificando username:', err);
+            regUsernameError.textContent = 'No se pudo verificar el usuario: ' + (err.code || err.message || err);
+            regUsername.style.borderColor = '#dc3545';
             btn.textContent = originalText;
             btn.disabled = false;
+            return;
+        }
 
+        if (taken) {
+            var suggestions = await generateUsernameSuggestions(username);
+            regUsernameError.textContent = suggestions.length > 0
+                ? 'Este nombre de usuario ya está en uso. Sugerencias: ' + suggestions.join(', ')
+                : 'Este nombre de usuario ya está en uso.';
+            regUsername.style.borderColor = '#dc3545';
+            btn.textContent = originalText;
+            btn.disabled = false;
+            regUsername.focus();
+            return;
+        }
+
+        btn.textContent = 'Registrando...';
+
+        const email = regEmail.value.trim();
+        const password = regPassword.value;
+        const displayName = regName.value.trim();
+
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            try {
+                await setDoc(doc(db, 'users', user.uid), {
+                    name: displayName,
+                    username: username,
+                    email: email,
+                    createdAt: new Date().toISOString()
+                });
+            } catch (firestoreErr) {
+                console.error('Error guardando datos en Firestore:', firestoreErr);
+                alert('Tu cuenta se creó, pero no se pudieron guardar tus datos (' + (firestoreErr.code || firestoreErr.message) + '). Al iniciar sesión te los pediremos de nuevo.');
+                registerPanel.style.display = 'none';
+                loginPanel.style.display = 'block';
+                emailInput.value = email;
+                btn.textContent = originalText;
+                btn.disabled = false;
+                return;
+            }
+
+            alert('¡Bienvenid@ ' + displayName + '! Tu usuario "' + username + '" ha sido registrado con éxito.');
+            registerPanel.style.display = 'none';
+            loginPanel.style.display = 'block';
+            emailInput.value = email;
+            validateLoginEmail(email);
+            document.querySelector('.login-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            btn.textContent = originalText;
+            btn.disabled = false;
             registerForm.reset();
             regName.style.borderColor = '';
             regUsername.style.borderColor = '';
@@ -364,7 +461,54 @@
             regEmailError.textContent = '';
             regPasswordError.textContent = '';
             regConfirmError.textContent = '';
-        }, 1500);
+        } catch (error) {
+            const errorCode = error.code;
+            const errorMessage = error.message;
+            if (errorCode === 'auth/email-already-in-use') {
+                regEmailError.textContent = 'Este correo ya está registrado.';
+                regEmail.style.borderColor = '#dc3545';
+            } else if (errorCode === 'auth/weak-password') {
+                regPasswordError.textContent = 'La contraseña es muy débil.';
+                regPassword.style.borderColor = '#dc3545';
+            } else if (errorCode === 'auth/invalid-email') {
+                regEmailError.textContent = 'Correo inválido.';
+                regEmail.style.borderColor = '#dc3545';
+            } else {
+                regEmailError.textContent = 'Error: ' + errorMessage;
+                regEmail.style.borderColor = '#dc3545';
+            }
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    });
+
+    function handleSocialLogin(provider, providerName) {
+        signInWithPopup(auth, provider)
+            .then((result) => {
+                const user = result.user;
+                localStorage.setItem('botardo_remember', 'true');
+                localStorage.setItem('botardo_email', user.email);
+                window.location.href = '../html/dashboard.html';
+            })
+            .catch((error) => {
+                const errorCode = error.code;
+                const errorMessage = error.message;
+                if (errorCode === 'auth/popup-closed-by-user') {
+                    console.log('Popup cerrado por el usuario');
+                } else if (errorCode === 'auth/account-exists-with-different-credential') {
+                    alert('Ya existe una cuenta con este correo usando otro método.');
+                } else {
+                    alert('Error al iniciar sesión con ' + providerName + ': ' + errorMessage);
+                }
+            });
+    }
+
+    document.querySelector('.social-btn.google').addEventListener('click', function() {
+        handleSocialLogin(googleProvider, 'Google');
+    });
+
+    document.querySelector('.social-btn.github').addEventListener('click', function() {
+        handleSocialLogin(githubProvider, 'GitHub');
     });
 
     (function loadRemembered() {
