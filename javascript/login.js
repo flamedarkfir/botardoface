@@ -148,9 +148,9 @@ import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, s
             regUsername.style.borderColor = '#dc3545';
             return false;
         }
-        var latinRegex = /^[A-Za-z]+$/;
-        if (!latinRegex.test(trimmed)) {
-            regUsernameError.textContent = 'Solo letras A-Z, a-z (sin ñ, números ni símbolos).';
+        var usernameRegex = /^[A-Za-z0-9_]+$/;
+        if (!usernameRegex.test(trimmed)) {
+            regUsernameError.textContent = 'Solo letras, números y guion bajo (_), sin espacios ni símbolos.';
             regUsername.style.borderColor = '#dc3545';
             return false;
         }
