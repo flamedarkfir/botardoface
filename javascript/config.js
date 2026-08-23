@@ -26,6 +26,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let onlineUidsSet = new Set();
     let contactEmojis = {};
     let attachedChatListeners = new Set();
+    let userStats = { loginCount: 0, exportCount: 0, aiMessages: 0 };
 
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, function(c) {
@@ -232,6 +233,66 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
         const friendCountEl = document.getElementById('friendCount');
         if (friendCountEl) friendCountEl.textContent = amigos;
+        const statFriendCountEl = document.getElementById('statFriendCount');
+        if (statFriendCountEl) statFriendCountEl.textContent = amigos;
+    }
+
+    function renderUserStats() {
+        const loginEl = document.getElementById('statLoginCount');
+        if (loginEl) loginEl.textContent = userStats.loginCount;
+        const exportEl = document.getElementById('statExportCount');
+        if (exportEl) exportEl.textContent = userStats.exportCount;
+        const aiEl = document.getElementById('statAiMessages');
+        if (aiEl) aiEl.textContent = userStats.aiMessages;
+    }
+
+    async function cargarUserStats() {
+        if (!currentUser) return;
+        try {
+            const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/stats'));
+            if (snap.exists()) {
+                const val = snap.val();
+                userStats.loginCount = val.loginCount || 0;
+                userStats.exportCount = val.exportCount || 0;
+                userStats.aiMessages = val.aiMessages || 0;
+            }
+        } catch (err) {
+            console.error('Error cargando estadísticas:', err);
+        }
+        renderUserStats();
+    }
+
+    async function registrarEntrada() {
+        if (!currentUser) return;
+        try {
+            userStats.loginCount += 1;
+            await set(ref(rtdb, 'users/' + currentUser.uid + '/stats/loginCount'), userStats.loginCount);
+            renderUserStats();
+        } catch (err) {
+            console.error('Error registrando entrada:', err);
+        }
+    }
+
+    async function incrementarStatExport() {
+        if (!currentUser) return;
+        try {
+            userStats.exportCount += 1;
+            await set(ref(rtdb, 'users/' + currentUser.uid + '/stats/exportCount'), userStats.exportCount);
+            renderUserStats();
+        } catch (err) {
+            console.error('Error registrando exportación:', err);
+        }
+    }
+
+    async function incrementarStatAiMessage() {
+        if (!currentUser) return;
+        try {
+            userStats.aiMessages += 1;
+            await set(ref(rtdb, 'users/' + currentUser.uid + '/stats/aiMessages'), userStats.aiMessages);
+            renderUserStats();
+        } catch (err) {
+            console.error('Error registrando mensaje de IA:', err);
+        }
     }
 
     function renderizarPosts() {
@@ -1878,6 +1939,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         appendAssistantMessage('user', text);
         input.value = '';
         sendBtn.disabled = true;
+        incrementarStatAiMessage();
 
         const container = document.getElementById('assistantMessages');
         const typingBubble = document.createElement('div');
@@ -2128,15 +2190,50 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
     }
 
-    const newProjectBtn = document.getElementById('newProjectBtn');
-    if (newProjectBtn) {
-        newProjectBtn.addEventListener('click', function() {
-            alert('Los proyectos se crean manualmente en la carpeta html/proyectos/\n\n' +
-                'Para agregar un nuevo proyecto:\n' +
-                '1. Crea un archivo .html en html/proyectos/\n' +
-                '2. Agrega el nombre del proyecto en la lista de proyectos en config.js\n' +
-                '3. Recarga la página');
+    const projectsInfoBtn = document.getElementById('projectsInfoBtn');
+    if (projectsInfoBtn) {
+        projectsInfoBtn.addEventListener('click', openProjectsInfoModal);
+    }
+
+    function buildProjectsInfoModal() {
+        if (document.getElementById('projectsInfoOverlay')) return;
+        const html = `
+            <div class="modal-overlay" id="projectsInfoOverlay">
+                <div class="modal">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-circle-info"></i> Sobre estos proyectos</h3>
+                        <button class="modal-close" id="projectsInfoClose">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="user-profile-empty">
+                            Estos son proyectos propios de Botardo, no tienen relación con tu cuenta,
+                            tu horario ni tus datos dentro de la app. Los publicamos aquí simplemente
+                            para que puedas probarlos. No puedes crear proyectos nuevos desde tu cuenta;
+                            solo nosotros los publicamos.
+                        </p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-cancel" id="projectsInfoOk">Entendido</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', html);
+        document.getElementById('projectsInfoClose').addEventListener('click', closeProjectsInfoModal);
+        document.getElementById('projectsInfoOk').addEventListener('click', closeProjectsInfoModal);
+        document.getElementById('projectsInfoOverlay').addEventListener('click', function(e) {
+            if (e.target === this) closeProjectsInfoModal();
         });
+    }
+
+    function openProjectsInfoModal() {
+        buildProjectsInfoModal();
+        document.getElementById('projectsInfoOverlay').classList.add('open');
+    }
+
+    function closeProjectsInfoModal() {
+        const overlay = document.getElementById('projectsInfoOverlay');
+        if (overlay) overlay.classList.remove('open');
     }
 
     async function cargarNotifSettings() {
@@ -2330,6 +2427,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
+            incrementarStatExport();
         } catch (err) {
             console.error('Error exportando datos:', err);
             alert('No se pudieron exportar los datos: ' + (err.code || err.message));
@@ -2354,6 +2452,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         initPresence();
         buildAssistantUI();
         cargarNotifSettings();
+        cargarUserStats().then(registrarEntrada);
         initChatUI();
         renderActivityTimeline();
 

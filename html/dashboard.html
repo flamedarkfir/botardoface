@@ -21,9 +21,10 @@
                 <li><a href="#mensajes" data-section="mensajes"><i class="fas fa-comment-dots"></i><span>Mensajes</span></a></li>
                 <li><a href="#clases" data-section="clases"><i class="fas fa-chalkboard-user"></i><span>Horario</span></a></li>
                 <li><a href="#camara" data-section="camara"><i class="fas fa-camera"></i><span>Cámara</span></a></li>
-                <li><a href="#proyectos" data-section="proyectos"><i class="fas fa-folder-open"></i><span>Proyectos</span></a></li>
                 <li><a href="#estadisticas" data-section="estadisticas"><i class="fas fa-chart-bar"></i><span>Estadísticas</span></a></li>
                 <li><a href="#configuracion" data-section="configuracion"><i class="fas fa-gear"></i><span>Configuración</span></a></li>
+                <li class="sidebar-separator"></li>
+                <li><a href="#proyectos" data-section="proyectos"><i class="fas fa-folder-open"></i><span>Proyectos</span></a></li>
             </ul>
         </nav>
         <div class="sidebar-footer">
@@ -266,21 +267,25 @@
             </div>
         </section>
 
-        <section id="section-proyectos" class="dashboard-section">
-            <div class="projects-container">
-                <div class="projects-header"><h2><i class="fas fa-folder-open"></i> Proyectos</h2><button class="btn btn-primary" id="newProjectBtn"><i class="fas fa-plus"></i> Nuevo proyecto</button></div>
-                <div class="projects-grid" id="projectsGrid"></div>
-            </div>
-        </section>
-
         <section id="section-estadisticas" class="dashboard-section">
             <div class="stats-container">
                 <h2><i class="fas fa-chart-bar"></i> Estadísticas</h2>
-                <div class="stats-charts">
-                    <div class="chart-card"><h3>Reconocimientos por día</h3><div class="chart-placeholder"><i class="fas fa-chart-line"></i><p>Gráfico de actividad</p></div></div>
-                    <div class="chart-card"><h3>Distribución de usuarios</h3><div class="chart-placeholder"><i class="fas fa-chart-pie"></i><p>Gráfico de usuarios</p></div></div>
-                    <div class="chart-card"><h3>Tasa de precisión</h3><div class="chart-placeholder"><i class="fas fa-chart-bar"></i><p>Gráfico de precisión</p></div></div>
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-right-to-bracket"></i></div><div class="stat-info"><span class="stat-value" id="statLoginCount">0</span><span class="stat-label">Veces que has entrado</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-file-export"></i></div><div class="stat-info"><span class="stat-value" id="statExportCount">0</span><span class="stat-label">Datos exportados</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-user-group"></i></div><div class="stat-info"><span class="stat-value" id="statFriendCount">0</span><span class="stat-label">Amigos</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-robot"></i></div><div class="stat-info"><span class="stat-value" id="statAiMessages">0</span><span class="stat-label">Mensajes con la IA</span></div></div>
                 </div>
+            </div>
+        </section>
+
+        <section id="section-proyectos" class="dashboard-section">
+            <div class="projects-container">
+                <div class="projects-header">
+                    <h2><i class="fas fa-folder-open"></i> Proyectos</h2>
+                    <button class="btn btn-secondary btn-sm" id="projectsInfoBtn"><i class="fas fa-circle-info"></i> ¿Qué es esto?</button>
+                </div>
+                <div class="projects-grid" id="projectsGrid"></div>
             </div>
         </section>
 
