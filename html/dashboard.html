@@ -41,12 +41,13 @@
             <div class="header-right">
                 <div class="header-search">
                     <i class="fas fa-search"></i>
-                    <input type="text" placeholder="Buscar..." id="searchInput" />
+                    <input type="text" placeholder="Buscar..." id="searchInput" autocomplete="off" />
+                    <div class="search-suggestions" id="searchSuggestions"></div>
                 </div>
                 <div class="header-notifications">
                     <button class="notif-btn" id="notifBtn">
                         <i class="fas fa-bell"></i>
-                        <span class="notif-badge">0</span>
+                        <span class="notif-badge" id="notifBadge"></span>
                     </button>
                     <div class="notif-dropdown" id="notifDropdown">
                         <div class="notif-tabs">
@@ -192,26 +193,26 @@
         </section>
 
         <section id="section-mensajes" class="dashboard-section">
-            <div class="messages-container" style="display:flex;gap:1.25rem;height:calc(100vh - 190px);min-height:420px;">
-                <div class="messages-contacts" style="width:280px;flex-shrink:0;background:var(--card-bg);border-radius:16px;border:1px solid var(--border-color);overflow-y:auto;">
-                    <div style="padding:1rem;border-bottom:1px solid var(--border-color);">
-                        <h3 style="font-size:1rem;margin:0;"><i class="fas fa-comment-dots"></i> Conversaciones</h3>
+            <div class="messages-container" id="messagesContainer">
+                <div class="messages-contacts">
+                    <div class="messages-contacts-header">
+                        <h3><i class="fas fa-comment-dots"></i> Conversaciones</h3>
                     </div>
-                    <div id="chatContactsList" style="padding:0.5rem;"></div>
+                    <div id="chatContactsList" class="chat-contacts-list"></div>
                 </div>
-                <div class="messages-chat" style="flex:1;background:var(--card-bg);border-radius:16px;border:1px solid var(--border-color);display:flex;flex-direction:column;overflow:hidden;">
-                    <div id="chatEmptyState" style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--text-secondary);text-align:center;padding:2rem;">
-                        <i class="fas fa-comments" style="font-size:3rem;opacity:0.2;margin-bottom:1rem;"></i>
+                <div class="messages-chat">
+                    <div id="chatEmptyState" class="chat-empty-state">
+                        <i class="fas fa-comments"></i>
                         <p>Selecciona una conversación para empezar</p>
                     </div>
-                    <div id="chatActiveWindow" style="display:none;flex-direction:column;height:100%;">
-                        <div id="chatHeader" style="padding:1rem;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between;"></div>
-                        <div id="chatMessagesList" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:0.6rem;"></div>
-                        <div id="chatInputArea" style="display:flex;gap:0.5rem;padding:0.9rem;border-top:1px solid var(--border-color);">
-                            <input type="text" id="chatMessageInput" placeholder="Escribe un mensaje..." style="flex:1;padding:0.6rem 0.9rem;border-radius:10px;border:1px solid var(--border-color);outline:none;" />
+                    <div id="chatActiveWindow" class="chat-active-window">
+                        <div id="chatHeader" class="chat-header"></div>
+                        <div id="chatMessagesList" class="chat-messages-list"></div>
+                        <div id="chatInputArea" class="chat-input-area">
+                            <input type="text" id="chatMessageInput" placeholder="Escribe un mensaje..." />
                             <button class="btn btn-primary btn-sm" id="chatSendBtn"><i class="fas fa-paper-plane"></i></button>
                         </div>
-                        <div id="chatBlockedNotice" style="display:none;padding:0.9rem;text-align:center;color:var(--text-secondary);font-size:0.85rem;border-top:1px solid var(--border-color);"></div>
+                        <div id="chatBlockedNotice" class="chat-blocked-notice"></div>
                     </div>
                 </div>
             </div>
@@ -304,6 +305,8 @@
             <div class="footer-bottom"><div class="footer-bottom-content"><div class="footer-info"><span>© 2026 Botardo Face · Colegio Luis Madina · Colombia</span></div></div></div>
         </footer>
     </main>
+
+    <div class="toast-container" id="toastContainer"></div>
 
     <script type="module" src="../javascript/config.js"></script>
 </body>

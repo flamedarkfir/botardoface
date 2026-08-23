@@ -1,6 +1,6 @@
 import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
 
-(function () {
+(function() {
     'use strict';
 
     let currentUser = null;
@@ -20,6 +20,58 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let chatContacts = [];
     let currentChatUid = null;
     let currentChatListenerRef = null;
+    let followingList = [];
+    let followersInitialized = false;
+    let activityLog = [];
+    let onlineUidsSet = new Set();
+    let contactEmojis = {};
+    let attachedChatListeners = new Set();
+
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, function(c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    function formatearTiempoRelativo(timestamp) {
+        const diff = Math.floor((Date.now() - timestamp) / 1000);
+        if (diff < 60) return 'Hace unos segundos';
+        if (diff < 3600) return `Hace ${Math.floor(diff / 60)} min`;
+        if (diff < 86400) return `Hace ${Math.floor(diff / 3600)} h`;
+        return `Hace ${Math.floor(diff / 86400)} d`;
+    }
+
+    function renderActivityTimeline() {
+        const container = document.getElementById('activityTimeline');
+        if (!container) return;
+        if (activityLog.length === 0) {
+            container.innerHTML = `
+                <div class="empty-posts">
+                    <i class="fas fa-clock-rotate-left"></i>
+                    <p>No hay actividad reciente</p>
+                    <p style="font-size:0.8rem;">Aquí aparecerán los últimos eventos del sistema</p>
+                </div>
+            `;
+            return;
+        }
+        container.innerHTML = activityLog.map(function(a) {
+            return `
+                <div class="activity-item">
+                    <span class="activity-dot" style="background:${a.color};"></span>
+                    <div class="activity-content">
+                        <p><strong>${escapeHtml(a.titulo)}</strong> — ${escapeHtml(a.mensaje)}</p>
+                        <span class="activity-time">${formatearTiempoRelativo(a.timestamp)}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function agregarActividad(color, titulo, mensaje) {
+        activityLog.unshift({ color: color, titulo: titulo, mensaje: mensaje, timestamp: Date.now() });
+        if (activityLog.length > 25) activityLog = activityLog.slice(0, 25);
+        renderActivityTimeline();
+    }
 
     const materiasDisponibles = [
         'Matemáticas', 'Español', 'Inglés', 'Ciencias Naturales', 'Ciencias Sociales',
@@ -175,7 +227,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         if (followingCountEl) followingCountEl.textContent = followingSet.size;
 
         let amigos = 0;
-        followingSet.forEach(function (uid) {
+        followingSet.forEach(function(uid) {
             if (followersSet.has(uid)) amigos++;
         });
         const friendCountEl = document.getElementById('friendCount');
@@ -230,11 +282,11 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/posts'));
             posts = [];
             if (snap.exists()) {
-                snap.forEach(function (child) {
+                snap.forEach(function(child) {
                     const val = child.val();
                     posts.push({ id: child.key, texto: val.texto, fecha: val.fecha, createdAt: val.createdAt || 0 });
                 });
-                posts.sort(function (a, b) { return b.createdAt - a.createdAt; });
+                posts.sort(function(a, b) { return b.createdAt - a.createdAt; });
             }
         } catch (err) {
             console.error('Error cargando notas:', err);
@@ -265,7 +317,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         if (!confirm('¿Eliminar esta nota?')) return;
         try {
             await remove(ref(rtdb, 'users/' + currentUser.uid + '/posts/' + id));
-            posts = posts.filter(function (p) { return p.id !== id; });
+            posts = posts.filter(function(p) { return p.id !== id; });
             renderizarPosts();
             actualizarStats();
         } catch (err) {
@@ -321,7 +373,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const addPostBtn = document.getElementById('addPostBtn');
 
         if (editBioBtn) {
-            editBioBtn.addEventListener('click', function () {
+            editBioBtn.addEventListener('click', function() {
                 bioEdit.style.display = 'block';
                 bioTextEl.style.display = 'none';
                 this.style.display = 'none';
@@ -330,7 +382,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
 
         if (cancelBioBtn) {
-            cancelBioBtn.addEventListener('click', function () {
+            cancelBioBtn.addEventListener('click', function() {
                 bioEdit.style.display = 'none';
                 bioTextEl.style.display = 'block';
                 editBioBtn.style.display = 'inline-block';
@@ -339,7 +391,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
 
         if (saveBioBtn) {
-            saveBioBtn.addEventListener('click', async function () {
+            saveBioBtn.addEventListener('click', async function() {
                 const nuevoTexto = bioTextarea.value.trim();
                 if (!nuevoTexto) {
                     alert('Por favor escribe algo sobre ti.');
@@ -355,7 +407,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
 
         if (addPostBtn) {
-            addPostBtn.addEventListener('click', function () {
+            addPostBtn.addEventListener('click', function() {
                 const texto = prompt('Escribe tu nota:');
                 if (texto && texto.trim()) {
                     agregarPost(texto.trim());
@@ -365,7 +417,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         const emojiEl = document.getElementById('statusEmoji');
         if (emojiEl) {
-            emojiEl.addEventListener('click', function () {
+            emojiEl.addEventListener('click', function() {
                 const emojis = ['😊', '😎', '🤓', '🔥', '💪', '🌟', '🚀', '💡', '🎯', '✨', '😄', '🤩', '👨‍💻', '👩‍💻', '🧠'];
                 const current = emojis.indexOf(statusEmoji);
                 const next = (current + 1) % emojis.length;
@@ -402,7 +454,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/clases'));
             clases = [];
             if (snap.exists()) {
-                snap.forEach(function (child) {
+                snap.forEach(function(child) {
                     clases.push(Object.assign({ id: child.key }, child.val()));
                 });
             }
@@ -509,35 +561,46 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     function agregarNotificacionSistema(titulo, mensaje) {
-        if (!notifSettings.sistema) return;
-        const list = document.querySelector('#notifSistema .notif-list');
-        if (!list) return;
-        const emptyMsg = list.querySelector('li:only-child');
-        if (emptyMsg && emptyMsg.textContent.includes('Sistema funcionando')) list.innerHTML = '';
-        const item = document.createElement('li');
-        item.className = 'notif-item unread';
-        item.innerHTML = `
-            <i class="fas fa-info-circle" style="color:#0d47a1;"></i>
-            <div><p><strong>${titulo}</strong> - ${mensaje}</p><span>Hace unos segundos</span></div>
-        `;
-        list.prepend(item);
-        actualizarBadge();
+        if (notifSettings.sistema) {
+            const list = document.querySelector('#notifSistema .notif-list');
+            if (list) {
+                const emptyMsg = list.querySelector('li:only-child');
+                if (emptyMsg && emptyMsg.textContent.includes('Sistema funcionando')) list.innerHTML = '';
+                const item = document.createElement('li');
+                item.className = 'notif-item unread';
+                item.innerHTML = `
+                    <i class="fas fa-info-circle" style="color:#0d47a1;"></i>
+                    <div><p><strong>${escapeHtml(titulo)}</strong> - ${escapeHtml(mensaje)}</p><span>Hace unos segundos</span></div>
+                `;
+                list.prepend(item);
+                actualizarBadge();
+            }
+        }
+        agregarActividad('#0d47a1', titulo, mensaje);
     }
 
     function agregarNotificacionLive(titulo, mensaje) {
-        if (!notifSettings.live) return;
-        const list = document.querySelector('#notifLive .notif-list');
-        if (!list) return;
-        const emptyMsg = list.querySelector('li:only-child');
-        if (emptyMsg && emptyMsg.textContent.includes('No hay notificaciones')) list.innerHTML = '';
-        const item = document.createElement('li');
-        item.className = 'notif-item unread';
-        item.innerHTML = `
-            <i class="fas fa-bell" style="color:#e65100;"></i>
-            <div><p><strong>${titulo}</strong> - ${mensaje}</p><span>Hace unos segundos</span></div>
-        `;
-        list.prepend(item);
-        actualizarBadge();
+        if (notifSettings.live) {
+            const list = document.querySelector('#notifLive .notif-list');
+            if (list) {
+                const emptyMsg = list.querySelector('li:only-child');
+                if (emptyMsg && emptyMsg.textContent.includes('No hay notificaciones')) list.innerHTML = '';
+                const item = document.createElement('li');
+                item.className = 'notif-item unread';
+                item.innerHTML = `
+                    <i class="fas fa-bell" style="color:#e65100;"></i>
+                    <div><p><strong>${escapeHtml(titulo)}</strong> - ${escapeHtml(mensaje)}</p><span>Hace unos segundos</span></div>
+                `;
+                list.prepend(item);
+                actualizarBadge();
+            }
+        }
+        agregarActividad('#e65100', titulo, mensaje);
+    }
+
+    function agregarNotificacionBienvenida() {
+        const nombre = (currentUserData && currentUserData.name) ? currentUserData.name : 'Usuario';
+        agregarNotificacionLive('¡Bienvenido/a!', `Bienvenido/a ${nombre} a Botardo Face App!`);
     }
 
     function actualizarBadge() {
@@ -646,14 +709,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
         document.querySelectorAll('.day-checkbox').forEach(cb => {
-            cb.addEventListener('change', function () {
+            cb.addEventListener('change', function() {
                 this.closest('label').classList.toggle('checked', this.checked);
             });
         });
 
         const overlay = document.getElementById('modalOverlay');
         if (overlay) {
-            overlay.addEventListener('click', function (e) {
+            overlay.addEventListener('click', function(e) {
                 if (e.target === this) cerrarModal();
             });
         }
@@ -776,7 +839,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const q = query(usersRef, where('username', '==', username));
         const snapshot = await getDocs(q);
         let taken = false;
-        snapshot.forEach(function (docSnap) {
+        snapshot.forEach(function(docSnap) {
             if (docSnap.id !== uid) taken = true;
         });
         return taken;
@@ -808,21 +871,21 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 <div class="modal">
                     <div class="modal-header"><h3>Completa tus datos</h3></div>
                     <div class="modal-body">
-                        <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:1rem;">Necesitamos estos datos para activar tu cuenta.</p>
+                        <p class="social-empty">Necesitamos estos datos para activar tu cuenta.</p>
                         <div class="form-group">
                             <label>Nombres y Apellidos</label>
                             <input type="text" id="completeName" placeholder="Ej: Juan Camilo Pérez Muñoz" />
-                            <div id="completeNameError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                            <div id="completeNameError" class="field-error"></div>
                         </div>
                         <div class="form-group">
                             <label>Nombre de usuario</label>
                             <input type="text" id="completeUsername" placeholder="Ej: juan007" />
-                            <div id="completeUsernameError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                            <div id="completeUsernameError" class="field-error"></div>
                         </div>
                         <div class="form-group">
                             <label>Correo electrónico</label>
                             <input type="email" id="completeEmail" placeholder="Ej: ejemplo@gmail.com" />
-                            <div id="completeEmailError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                            <div id="completeEmailError" class="field-error"></div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -852,7 +915,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         overlay.classList.add('open');
 
-        saveBtn.onclick = async function () {
+        saveBtn.onclick = async function() {
             nameError.textContent = '';
             usernameError.textContent = '';
             emailError.textContent = '';
@@ -920,10 +983,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     createdAt: (existingData && existingData.createdAt) || new Date().toISOString()
                 });
 
+                const esCuentaNueva = !existingData;
                 currentUserData = { name: name, username: username, email: email };
                 overlay.classList.remove('open');
                 overlay.remove();
                 init();
+                if (esCuentaNueva) agregarNotificacionBienvenida();
             } catch (err) {
                 console.error('Error guardando datos en Firestore:', err);
                 emailError.textContent = 'No se pudo guardar: ' + (err.code || err.message || err);
@@ -967,17 +1032,17 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                         <div class="form-group">
                             <label>Contraseña actual</label>
                             <input type="password" id="currentPasswordInput" />
-                            <div id="currentPasswordError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                            <div id="currentPasswordError" class="field-error"></div>
                         </div>
                         <div class="form-group">
                             <label>Nueva contraseña</label>
                             <input type="password" id="newPasswordInput" />
-                            <div id="newPasswordError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                            <div id="newPasswordError" class="field-error"></div>
                         </div>
                         <div class="form-group">
                             <label>Confirmar nueva contraseña</label>
                             <input type="password" id="confirmPasswordInput" />
-                            <div id="confirmPasswordError" style="color:#dc3545;font-size:0.75rem;min-height:1.1rem;margin-top:0.2rem;"></div>
+                            <div id="confirmPasswordError" class="field-error"></div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -991,7 +1056,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         document.getElementById('passwordModalClose').addEventListener('click', closeChangePasswordModal);
         document.getElementById('passwordModalCancel').addEventListener('click', closeChangePasswordModal);
-        document.getElementById('passwordModalOverlay').addEventListener('click', function (e) {
+        document.getElementById('passwordModalOverlay').addEventListener('click', function(e) {
             if (e.target === this) closeChangePasswordModal();
         });
         document.getElementById('passwordModalSave').addEventListener('click', handleChangePassword);
@@ -999,7 +1064,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     function openChangePasswordModal() {
         buildChangePasswordModal();
-        const isPasswordProvider = currentUser.providerData.some(function (p) { return p.providerId === 'password'; });
+        const isPasswordProvider = currentUser.providerData.some(function(p) { return p.providerId === 'password'; });
         if (!isPasswordProvider) {
             alert('Tu cuenta usa inicio de sesión con Google o GitHub, no tiene contraseña para cambiar.');
             return;
@@ -1081,27 +1146,27 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const profileBody = document.querySelector('.profile-body') || document.querySelector('#section-perfil .profile-container') || document.getElementById('section-perfil');
         if (!profileBody) return;
         const html = `
-            <div class="profile-bio" id="socialSearchCard" style="margin-top:1.5rem;">
+            <div class="profile-bio" id="socialSearchCard">
                 <div class="bio-header"><i class="fas fa-user-plus"></i><h3>Buscar usuarios</h3></div>
-                <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-                    <input type="text" id="userSearchInput" placeholder="Buscar por nombre de usuario..." style="flex:1;padding:0.6rem 0.9rem;border-radius:10px;border:1px solid var(--border-color);outline:none;" />
+                <div class="user-search-row">
+                    <input type="text" id="userSearchInput" placeholder="Buscar por nombre de usuario..." />
                     <button class="btn btn-primary btn-sm" id="userSearchBtn"><i class="fas fa-search"></i></button>
                 </div>
                 <div id="userSearchResults"></div>
             </div>
-            <div class="profile-bio" id="followingCard" style="margin-top:1.5rem;">
+            <div class="profile-bio" id="followingCard">
                 <div class="bio-header"><i class="fas fa-users"></i><h3>Siguiendo</h3></div>
-                <div id="followingList"><p style="font-size:0.85rem;color:var(--text-secondary);">Aún no sigues a nadie.</p></div>
+                <div id="followingList"><p class="social-empty">Aún no sigues a nadie.</p></div>
             </div>
-            <div class="profile-bio" id="followersCard" style="margin-top:1.5rem;">
+            <div class="profile-bio" id="followersCard">
                 <div class="bio-header"><i class="fas fa-user-friends"></i><h3>Te siguen</h3></div>
-                <div id="followersListEl"><p style="font-size:0.85rem;color:var(--text-secondary);">Nadie te sigue todavía.</p></div>
+                <div id="followersListEl"><p class="social-empty">Nadie te sigue todavía.</p></div>
             </div>
         `;
         profileBody.insertAdjacentHTML('beforeend', html);
 
         document.getElementById('userSearchBtn').addEventListener('click', handleUserSearch);
-        document.getElementById('userSearchInput').addEventListener('keydown', function (e) {
+        document.getElementById('userSearchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') { e.preventDefault(); handleUserSearch(); }
         });
     }
@@ -1114,14 +1179,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const container = document.getElementById('followingList');
         if (!container) return;
         if (list.length === 0) {
-            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">Aún no sigues a nadie.</p>';
+            container.innerHTML = '<p class="social-empty">Aún no sigues a nadie.</p>';
             return;
         }
-        container.innerHTML = list.map(function (u) {
+        container.innerHTML = list.map(function(u) {
             return `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);gap:0.4rem;flex-wrap:wrap;">
-                    <div><strong>${u.name}</strong><div style="font-size:0.8rem;color:var(--text-secondary);">@${u.username}</div></div>
-                    <div style="display:flex;gap:0.4rem;">
+                <div class="social-list-item">
+                    <div><span class="social-list-name">${u.name}</span><div class="social-list-username">@${u.username}</div></div>
+                    <div class="social-list-actions">
                         <button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Ver perfil</button>
                         <button class="btn btn-secondary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Dejar de seguir</button>
                     </div>
@@ -1134,75 +1199,83 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const container = document.getElementById('followersListEl');
         if (!container) return;
         if (list.length === 0) {
-            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">Nadie te sigue todavía.</p>';
+            container.innerHTML = '<p class="social-empty">Nadie te sigue todavía.</p>';
             return;
         }
-        container.innerHTML = list.map(function (u) {
+        container.innerHTML = list.map(function(u) {
             const yaLoSigo = followingSet.has(u.uid);
             return `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);gap:0.4rem;flex-wrap:wrap;">
-                    <div><strong>${u.name}</strong><div style="font-size:0.8rem;color:var(--text-secondary);">@${u.username}</div></div>
-                    ${yaLoSigo ? '' : `<button class="btn btn-primary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Seguir de vuelta</button>`}
+                <div class="social-list-item">
+                    <div><span class="social-list-name">${u.name}</span><div class="social-list-username">@${u.username}</div></div>
+                    ${yaLoSigo ? '' : `<div class="social-list-actions"><button class="btn btn-primary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Seguir de vuelta</button></div>`}
                 </div>
             `;
         }).join('');
     }
 
-    async function loadFollowing() {
+    function initSocialListeners() {
         if (!currentUser) return;
-        try {
-            const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/following'));
+
+        onValue(ref(rtdb, 'users/' + currentUser.uid + '/following'), function(snap) {
             followingSet = new Set();
-            const list = [];
+            followingList = [];
             if (snap.exists()) {
-                snap.forEach(function (child) {
+                snap.forEach(function(child) {
                     followingSet.add(child.key);
                     const val = child.val();
-                    list.push({ uid: child.key, name: val.name, username: val.username });
+                    followingList.push({ uid: child.key, name: val.name, username: val.username });
                 });
             }
-            renderFollowingList(list);
-            actualizarStats();
-            buildChatContacts();
-        } catch (err) {
-            console.error('Error cargando seguidos:', err);
-        }
-    }
-
-    async function loadFollowers() {
-        if (!currentUser) return;
-        try {
-            const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/followers'));
-            followersSet = new Set();
-            followersList = [];
-            if (snap.exists()) {
-                snap.forEach(function (child) {
-                    followersSet.add(child.key);
-                    const val = child.val();
-                    followersList.push({ uid: child.key, name: val.name, username: val.username });
-                });
-            }
-            followersCount = followersList.length;
+            renderFollowingList(followingList);
             renderFollowersList(followersList);
             actualizarStats();
             buildChatContacts();
-        } catch (err) {
+        }, function(err) {
+            console.error('Error cargando seguidos:', err);
+        });
+
+        onValue(ref(rtdb, 'users/' + currentUser.uid + '/followers'), function(snap) {
+            const newSet = new Set();
+            const newList = [];
+            if (snap.exists()) {
+                snap.forEach(function(child) {
+                    newSet.add(child.key);
+                    const val = child.val();
+                    newList.push({ uid: child.key, name: val.name, username: val.username });
+                });
+            }
+            if (followersInitialized) {
+                newSet.forEach(function(uid) {
+                    if (!followersSet.has(uid)) {
+                        const u = newList.find(function(x) { return x.uid === uid; });
+                        if (u) agregarNotificacionLive('Nuevo seguidor', `${u.name} (@${u.username}) ahora te sigue`);
+                    }
+                });
+            }
+            followersSet = newSet;
+            followersList = newList;
+            followersCount = followersList.length;
+            followersInitialized = true;
+            renderFollowersList(followersList);
+            actualizarStats();
+            buildChatContacts();
+        }, function(err) {
             console.error('Error cargando seguidores:', err);
-        }
+        });
     }
 
     function renderSearchResults(results) {
         const container = document.getElementById('userSearchResults');
         if (results.length === 0) {
-            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">No se encontraron usuarios.</p>';
+            container.innerHTML = '<p class="social-empty">No se encontraron usuarios.</p>';
             return;
         }
-        container.innerHTML = results.map(function (u) {
+        container.innerHTML = results.map(function(u) {
             const isFollowing = followingSet.has(u.uid);
             return `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0;border-bottom:1px solid var(--border-color);gap:0.4rem;flex-wrap:wrap;">
-                    <div><strong>${u.name}</strong><div style="font-size:0.8rem;color:var(--text-secondary);">@${u.username}</div></div>
-                    <div style="display:flex;gap:0.4rem;">
+                <div class="social-list-item">
+                    <div><span class="social-list-name">${u.name}</span><div class="social-list-username">@${u.username}</div></div>
+                    <div class="social-list-actions">
                         ${isFollowing ? `<button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Ver perfil</button>` : ''}
                         <button class="btn ${isFollowing ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">${isFollowing ? 'Dejar de seguir' : 'Seguir'}</button>
                     </div>
@@ -1217,14 +1290,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const term = input.value.trim().toLowerCase();
         if (!term) { resultsContainer.innerHTML = ''; return; }
 
-        resultsContainer.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);">Buscando...</p>';
+        resultsContainer.innerHTML = '<p class="social-empty">Buscando...</p>';
 
         try {
             const usersRef = collection(db, 'users');
             const q = query(usersRef, where('username', '>=', term), where('username', '<=', term + '\uf8ff'));
             const snap = await getDocs(q);
             const results = [];
-            snap.forEach(function (docSnap) {
+            snap.forEach(function(docSnap) {
                 if (docSnap.id === currentUser.uid) return;
                 const data = docSnap.data();
                 if (!data.username || data.username.toLowerCase().indexOf(term) !== 0) return;
@@ -1233,7 +1306,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             renderSearchResults(results);
         } catch (err) {
             console.error('Error buscando usuarios:', err);
-            resultsContainer.innerHTML = '<p style="font-size:0.85rem;color:#dc3545;">Error al buscar: ' + (err.code || err.message) + '</p>';
+            resultsContainer.innerHTML = '<p class="social-error">Error al buscar: ' + (err.code || err.message) + '</p>';
         }
     }
 
@@ -1245,13 +1318,18 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 await remove(ref(rtdb, 'users/' + currentUser.uid + '/following/' + uid));
                 await remove(ref(rtdb, 'users/' + uid + '/followers/' + currentUser.uid));
                 followingSet.delete(uid);
+                followingList = followingList.filter(function(u) { return u.uid !== uid; });
             } else {
                 await set(ref(rtdb, 'users/' + currentUser.uid + '/following/' + uid), { name: name, username: username, followedAt: Date.now() });
                 await set(ref(rtdb, 'users/' + uid + '/followers/' + currentUser.uid), { name: currentUserData.name, username: currentUserData.username, followedAt: Date.now() });
                 followingSet.add(uid);
+                if (!followingList.some(function(u) { return u.uid === uid; })) {
+                    followingList.push({ uid: uid, name: name, username: username });
+                }
             }
-            await loadFollowing();
+            renderFollowingList(followingList);
             renderFollowersList(followersList);
+            buildChatContacts();
             const term = document.getElementById('userSearchInput').value.trim().toLowerCase();
             if (term) handleUserSearch();
         } catch (err) {
@@ -1262,39 +1340,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     window.toggleFollow = toggleFollow;
 
-    function buildOnlineUsersCard() {
-        if (document.getElementById('onlineUsersCard')) return;
-        const panelGrid = document.querySelector('.panel-grid');
-        if (!panelGrid) return;
-        const html = `
-            <div class="panel-card" id="onlineUsersCard">
-                <div class="panel-card-header"><h3><i class="fas fa-circle" style="color:#2e7d32;font-size:0.6rem;"></i> Usuarios conectados</h3></div>
-                <div class="panel-card-body">
-                    <div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;">
-                        <span style="font-size:2rem;font-weight:700;color:var(--text-primary);" id="onlineUsersCount">0</span>
-                        <span style="color:var(--text-secondary);font-size:0.85rem;">usuarios conectados ahora mismo</span>
-                    </div>
-                    <p style="font-size:0.75rem;color:var(--text-secondary);margin-top:0.25rem;"><i class="fas fa-lock"></i> Por privacidad no mostramos quiénes son.</p>
-                </div>
-            </div>
-        `;
-        panelGrid.insertAdjacentHTML('beforeend', html);
-    }
-
-    function renderOnlineUsersCount(count) {
-        const el = document.getElementById('onlineUsersCount');
-        if (el) el.textContent = count;
-    }
-
     function initPresence() {
         if (!currentUser) return;
         const myPresenceRef = ref(rtdb, 'presence/' + currentUser.uid);
         const connectedRef = ref(rtdb, '.info/connected');
         presenceRefHandle = myPresenceRef;
 
-        onValue(connectedRef, function (snap) {
+        onValue(connectedRef, function(snap) {
             if (snap.val() === true) {
-                onDisconnect(myPresenceRef).remove().then(function () {
+                onDisconnect(myPresenceRef).remove().then(function() {
                     set(myPresenceRef, {
                         name: currentUserData.name,
                         username: currentUserData.username,
@@ -1305,12 +1359,40 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
 
         onlineListenerRef = ref(rtdb, 'presence');
-        onValue(onlineListenerRef, function (snap) {
+        onValue(onlineListenerRef, function(snap) {
             let count = 0;
-            snap.forEach(function (child) {
-                if (child.key !== currentUser.uid) count++;
+            onlineUidsSet = new Set();
+            snap.forEach(function(child) {
+                count++;
+                onlineUidsSet.add(child.key);
             });
-            renderOnlineUsersCount(count);
+            if (totalUsuarios) totalUsuarios.textContent = count;
+            renderChatContacts();
+            if (currentChatUid) actualizarEstadoChatHeader(currentChatUid);
+        });
+    }
+
+    function estaEnLinea(uid) {
+        return onlineUidsSet.has(uid);
+    }
+
+    async function obtenerEmojiUsuario(uid) {
+        if (uid in contactEmojis) return contactEmojis[uid];
+        try {
+            const snap = await get(ref(rtdb, 'users/' + uid + '/perfil/emoji'));
+            contactEmojis[uid] = snap.exists() ? snap.val() : '😊';
+        } catch (err) {
+            contactEmojis[uid] = '😊';
+        }
+        return contactEmojis[uid];
+    }
+
+    function precargarEmojis(list) {
+        const faltantes = (list || []).filter(function(u) { return !(u.uid in contactEmojis); });
+        if (faltantes.length === 0) return;
+        Promise.all(faltantes.map(function(u) { return obtenerEmojiUsuario(u.uid); })).then(function() {
+            renderChatContacts();
+            if (currentChatUid) actualizarEstadoChatHeader(currentChatUid);
         });
     }
 
@@ -1330,37 +1412,101 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     function buildChatContacts() {
         if (!currentUser) return;
         const combined = new Map();
-        (followersList || []).forEach(function (u) { combined.set(u.uid, u); });
+        (followersList || []).forEach(function(u) { combined.set(u.uid, u); });
+        (followingList || []).forEach(function(u) { combined.set(u.uid, u); });
+        chatContacts = Array.from(combined.values());
+        renderChatContacts();
+        precargarEmojis(chatContacts);
+        attachGlobalChatListeners();
+    }
 
-        get(ref(rtdb, 'users/' + currentUser.uid + '/following')).then(function (snap) {
-            if (snap.exists()) {
-                snap.forEach(function (child) {
-                    const val = child.val();
-                    combined.set(child.key, { uid: child.key, name: val.name, username: val.username });
+    function mensajesSeccionActiva() {
+        const sec = document.getElementById('section-mensajes');
+        return !!(sec && sec.classList.contains('active'));
+    }
+
+    function mostrarToastMensaje(u, text) {
+        let container = document.getElementById('toastContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+        }
+        const toast = document.createElement('div');
+        toast.className = 'chat-toast';
+        toast.innerHTML = `
+            <div class="chat-toast-avatar">${escapeHtml(u.name.charAt(0).toUpperCase())}</div>
+            <div class="chat-toast-body">
+                <span class="chat-toast-name">${escapeHtml(u.name)}</span>
+                <span class="chat-toast-text">${escapeHtml(text)}</span>
+            </div>
+        `;
+        toast.addEventListener('click', function() {
+            navigateTo('section-mensajes');
+            abrirChat(u.uid, u.name, u.username);
+            const mc = document.getElementById('messagesContainer');
+            if (mc && window.innerWidth <= 768) mc.classList.add('chat-open');
+            toast.classList.remove('show');
+            setTimeout(function() { toast.remove(); }, 250);
+        });
+        container.appendChild(toast);
+        requestAnimationFrame(function() { toast.classList.add('show'); });
+        setTimeout(function() {
+            toast.classList.remove('show');
+            setTimeout(function() { toast.remove(); }, 250);
+        }, 6000);
+    }
+
+    function attachGlobalChatListeners() {
+        chatContacts.forEach(function(u) {
+            if (attachedChatListeners.has(u.uid)) return;
+            attachedChatListeners.add(u.uid);
+            const messagesRef = ref(rtdb, chatMessagesPath(u.uid));
+            let isFirst = true;
+            let lastId = null;
+            onValue(messagesRef, function(snap) {
+                let last = null;
+                snap.forEach(function(child) {
+                    last = { id: child.key, from: child.val().from, text: child.val().text };
                 });
-            }
-            chatContacts = Array.from(combined.values());
-            renderChatContacts();
-        }).catch(function (err) {
-            console.error('Error preparando contactos de chat:', err);
+                if (isFirst) {
+                    isFirst = false;
+                    lastId = last ? last.id : null;
+                    return;
+                }
+                if (!last || last.id === lastId) return;
+                lastId = last.id;
+                if (last.from === currentUser.uid) return;
+                if (currentChatUid === u.uid && mensajesSeccionActiva()) return;
+                mostrarToastMensaje(u, last.text);
+            });
         });
     }
 
     function renderChatContacts() {
         const container = document.getElementById('chatContactsList');
         if (!container) return;
+        container.className = 'chat-contacts-list';
         if (chatContacts.length === 0) {
-            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);padding:0.75rem;">Sigue a alguien o consigue seguidores para poder chatear.</p>';
+            container.innerHTML = '<p class="social-empty">Sigue a alguien o consigue seguidores para poder chatear.</p>';
             return;
         }
-        container.innerHTML = chatContacts.map(function (u) {
+        container.innerHTML = chatContacts.map(function(u) {
             const canWrite = puedeEscribirA(u.uid);
+            const activeClass = u.uid === currentChatUid ? ' active' : '';
+            const online = estaEnLinea(u.uid);
+            const emoji = contactEmojis[u.uid] || '';
             return `
-                <div class="chat-contact-item" data-uid="${u.uid}" onclick="abrirChat('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')" style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.7rem;border-radius:10px;cursor:pointer;margin-bottom:0.2rem;">
-                    <div style="width:36px;height:36px;border-radius:50%;background:var(--primary,#1a2332);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;flex-shrink:0;">${u.name.charAt(0).toUpperCase()}</div>
-                    <div style="min-width:0;flex:1;">
-                        <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.name}</div>
-                        <div style="font-size:0.75rem;color:var(--text-secondary);">@${u.username}${canWrite ? '' : ' · no te sigue'}</div>
+                <div class="chat-contact-item${activeClass}" data-uid="${u.uid}" onclick="abrirChat('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">
+                    <div class="chat-contact-avatar-wrap">
+                        <div class="chat-contact-avatar">${u.name.charAt(0).toUpperCase()}</div>
+                        ${emoji ? `<span class="chat-contact-emoji">${emoji}</span>` : ''}
+                        <span class="chat-contact-dot ${online ? 'online' : 'offline'}"></span>
+                    </div>
+                    <div class="chat-contact-info">
+                        <div class="chat-contact-name">${u.name}</div>
+                        <div class="chat-contact-meta">@${u.username}${canWrite ? '' : ' · no te sigue'}</div>
                     </div>
                 </div>
             `;
@@ -1377,19 +1523,35 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const container = document.getElementById('chatMessagesList');
         if (!container) return;
         if (messages.length === 0) {
-            container.innerHTML = '<p style="font-size:0.85rem;color:var(--text-secondary);text-align:center;margin-top:1rem;">No hay mensajes todavía. Escribe el primero.</p>';
+            container.innerHTML = '<p class="chat-empty-messages">No hay mensajes todavía. Escribe el primero.</p>';
             return;
         }
-        container.innerHTML = messages.map(function (m) {
+        let lastSender = null;
+        container.innerHTML = messages.map(function(m) {
             const isMine = m.from === currentUser.uid;
+            const nuevoGrupo = m.from !== lastSender;
+            lastSender = m.from;
             return `
-                <div style="max-width:75%;padding:0.55rem 0.8rem;border-radius:12px;align-self:${isMine ? 'flex-end' : 'flex-start'};background:${isMine ? 'var(--primary,#1a2332)' : 'rgba(0,0,0,0.06)'};color:${isMine ? '#fff' : 'var(--text-primary,#1a2332)'};white-space:pre-wrap;font-size:0.88rem;">
-                    <div>${m.text}</div>
-                    <div style="font-size:0.68rem;opacity:0.7;text-align:right;margin-top:0.25rem;">${formatearHoraMensaje(m.createdAt)}</div>
+                <div class="chat-message ${isMine ? 'mine' : 'theirs'}${nuevoGrupo ? ' new-group' : ''}">
+                    <span class="chat-message-text">${escapeHtml(m.text)}</span>
+                    <span class="chat-message-time">${formatearHoraMensaje(m.createdAt)}</span>
                 </div>
             `;
         }).join('');
         container.scrollTop = container.scrollHeight;
+    }
+
+    function actualizarEstadoChatHeader(uid) {
+        const statusEl = document.getElementById('chatHeaderStatus');
+        if (!statusEl || currentChatUid !== uid) return;
+        statusEl.textContent = estaEnLinea(uid) ? 'Activo ahora' : 'Desconectado';
+        statusEl.classList.toggle('online', estaEnLinea(uid));
+        const emojiEl = document.getElementById('chatHeaderEmoji');
+        if (emojiEl) {
+            const emoji = contactEmojis[uid] || '';
+            emojiEl.textContent = emoji;
+            emojiEl.style.display = emoji ? 'inline-flex' : 'none';
+        }
     }
 
     function abrirChat(uid, name, username) {
@@ -1403,14 +1565,27 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const activeWindow = document.getElementById('chatActiveWindow');
         activeWindow.style.display = 'flex';
 
+        const online = estaEnLinea(uid);
+        const emoji = contactEmojis[uid] || '';
         const header = document.getElementById('chatHeader');
         header.innerHTML = `
-            <div>
-                <strong>${name}</strong>
-                <div style="font-size:0.8rem;color:var(--text-secondary);">@${username}</div>
+            <div class="chat-header-user">
+                <button class="chat-back-btn" onclick="cerrarChatMobile()" aria-label="Volver"><i class="fas fa-arrow-left"></i></button>
+                <div class="chat-contact-avatar-wrap">
+                    <div class="chat-contact-avatar">${name.charAt(0).toUpperCase()}</div>
+                    <span class="chat-contact-dot ${online ? 'online' : 'offline'}"></span>
+                </div>
+                <div>
+                    <div class="chat-header-name">${name} <span id="chatHeaderEmoji" class="chat-header-emoji" style="display:${emoji ? 'inline-flex' : 'none'};">${emoji}</span></div>
+                    <div id="chatHeaderStatus" class="chat-header-status ${online ? 'online' : ''}">${online ? 'Activo ahora' : 'Desconectado'}</div>
+                </div>
             </div>
             <button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${uid}', '${escapeForAttr(name)}', '${username}')">Ver perfil</button>
         `;
+        obtenerEmojiUsuario(uid).then(function() { actualizarEstadoChatHeader(uid); });
+
+        const messagesContainer = document.getElementById('messagesContainer');
+        if (messagesContainer && window.innerWidth <= 768) messagesContainer.classList.add('chat-open');
 
         const canWrite = puedeEscribirA(uid);
         const inputArea = document.getElementById('chatInputArea');
@@ -1424,24 +1599,31 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             blockedNotice.textContent = 'No puedes escribirle a este usuario todavía porque no te sigue.';
         }
 
-        document.querySelectorAll('.chat-contact-item').forEach(function (el) {
-            el.style.background = el.dataset.uid === uid ? 'rgba(0,0,0,0.06)' : 'transparent';
+        document.querySelectorAll('.chat-contact-item').forEach(function(el) {
+            el.classList.toggle('active', el.dataset.uid === uid);
         });
 
         const messagesRef = ref(rtdb, chatMessagesPath(uid));
         currentChatListenerRef = messagesRef;
-        onValue(messagesRef, function (snap) {
+        onValue(messagesRef, function(snap) {
             const messages = [];
-            snap.forEach(function (child) {
+            snap.forEach(function(child) {
                 const val = child.val();
                 messages.push({ id: child.key, from: val.from, text: val.text, createdAt: val.createdAt || 0 });
             });
-            messages.sort(function (a, b) { return a.createdAt - b.createdAt; });
+            messages.sort(function(a, b) { return a.createdAt - b.createdAt; });
             renderChatMessages(messages);
         });
     }
 
     window.abrirChat = abrirChat;
+
+    function cerrarChatMobile() {
+        const messagesContainer = document.getElementById('messagesContainer');
+        if (messagesContainer) messagesContainer.classList.remove('chat-open');
+    }
+
+    window.cerrarChatMobile = cerrarChatMobile;
 
     async function enviarMensajeChat() {
         const input = document.getElementById('chatMessageInput');
@@ -1464,12 +1646,113 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
     }
 
+    function normalizarTexto(texto) {
+        return String(texto).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    }
+
+    const seccionesBusqueda = [
+        { keywords: ['panel', 'inicio', 'dashboard'], target: 'section-panel' },
+        { keywords: ['perfil', 'mi perfil', 'cuenta'], target: 'section-perfil' },
+        { keywords: ['mensajes', 'mensaje', 'chat', 'chats', 'conversaciones'], target: 'section-mensajes' },
+        { keywords: ['horario', 'clases', 'clase', 'materias'], target: 'section-clases' },
+        { keywords: ['camara', 'reconocimiento facial'], target: 'section-camara' },
+        { keywords: ['proyectos', 'proyecto'], target: 'section-proyectos' },
+        { keywords: ['estadisticas', 'estadistica', 'graficos'], target: 'section-estadisticas' },
+        { keywords: ['configuracion', 'ajustes', 'seguridad', 'notificaciones'], target: 'section-configuracion' }
+    ];
+
+    function marcarBusquedaInvalida() {
+        const input = document.getElementById('searchInput');
+        if (!input) return;
+        input.classList.add('search-shake');
+        setTimeout(function() { input.classList.remove('search-shake'); }, 400);
+    }
+
+    function realizarBusquedaGlobal() {
+        const input = document.getElementById('searchInput');
+        if (!input) return;
+        const term = normalizarTexto(input.value);
+        if (!term) return;
+
+        const seccion = seccionesBusqueda.find(function(s) {
+            return s.keywords.some(function(k) { return normalizarTexto(k) === term || normalizarTexto(k).indexOf(term) === 0 || term.indexOf(normalizarTexto(k)) === 0; });
+        });
+        if (seccion) {
+            navigateTo(seccion.target);
+            return;
+        }
+
+        const contacto = chatContacts.find(function(u) {
+            return normalizarTexto(u.name).indexOf(term) === 0 || normalizarTexto(u.username).indexOf(term) === 0;
+        });
+        if (contacto) {
+            navigateTo('section-mensajes');
+            abrirChat(contacto.uid, contacto.name, contacto.username);
+            return;
+        }
+
+        marcarBusquedaInvalida();
+    }
+
+    const tituloSecciones = {
+        'section-panel': 'Panel',
+        'section-perfil': 'Perfil',
+        'section-mensajes': 'Mensajes',
+        'section-clases': 'Horario',
+        'section-camara': 'Cámara',
+        'section-proyectos': 'Proyectos',
+        'section-estadisticas': 'Estadísticas',
+        'section-configuracion': 'Configuración'
+    };
+
+    function ocultarSugerencias() {
+        const box = document.getElementById('searchSuggestions');
+        if (!box) return;
+        box.classList.remove('open');
+        box.innerHTML = '';
+    }
+
+    function renderSearchSuggestions(valor) {
+        const box = document.getElementById('searchSuggestions');
+        if (!box) return;
+        const term = normalizarTexto(valor);
+        if (!term) { ocultarSugerencias(); return; }
+
+        const seccionMatches = seccionesBusqueda.filter(function(s) {
+            return s.keywords.some(function(k) { return normalizarTexto(k).indexOf(term) !== -1; });
+        });
+        const contactMatches = chatContacts.filter(function(u) {
+            return normalizarTexto(u.name).indexOf(term) !== -1 || normalizarTexto(u.username).indexOf(term) !== -1;
+        });
+
+        let html = '';
+        seccionMatches.slice(0, 4).forEach(function(s) {
+            html += `
+                <div class="search-suggestion-item" data-type="section" data-target="${s.target}">
+                    <i class="fas fa-arrow-right"></i>
+                    <span>${escapeHtml(tituloSecciones[s.target] || s.target)}</span>
+                </div>
+            `;
+        });
+        contactMatches.slice(0, 5).forEach(function(u) {
+            html += `
+                <div class="search-suggestion-item" data-type="contact" data-uid="${u.uid}" data-name="${escapeForAttr(u.name)}" data-username="${u.username}">
+                    <i class="fas fa-user"></i>
+                    <span>${escapeHtml(u.name)} <small>@${escapeHtml(u.username)}</small></span>
+                </div>
+            `;
+        });
+
+        box.innerHTML = html || '<div class="search-suggestion-empty">Sin resultados</div>';
+        box.classList.add('open');
+    }
+
     function initChatUI() {
         const sendBtn = document.getElementById('chatSendBtn');
         const input = document.getElementById('chatMessageInput');
         if (sendBtn) sendBtn.addEventListener('click', enviarMensajeChat);
         if (input) {
-            input.addEventListener('keydown', function (e) {
+            input.addEventListener('keydown', function(e) {
                 if (e.key === 'Enter') { e.preventDefault(); enviarMensajeChat(); }
             });
         }
@@ -1479,22 +1762,22 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         if (document.getElementById('userProfileOverlay')) return;
         const html = `
             <div class="modal-overlay" id="userProfileOverlay">
-                <div class="modal" style="max-width:520px;">
+                <div class="modal modal-wide">
                     <div class="modal-header">
                         <h3 id="userProfileModalTitle">Perfil</h3>
                         <button class="modal-close" id="userProfileClose">&times;</button>
                     </div>
-                    <div class="modal-body" id="userProfileModalBody" style="max-height:60vh;overflow-y:auto;">
-                        <p style="text-align:center;color:var(--text-secondary);">Cargando...</p>
+                    <div class="modal-body modal-body-scroll" id="userProfileModalBody">
+                        <p class="user-profile-empty">Cargando...</p>
                     </div>
                 </div>
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', html);
-        document.getElementById('userProfileClose').addEventListener('click', function () {
+        document.getElementById('userProfileClose').addEventListener('click', function() {
             document.getElementById('userProfileOverlay').classList.remove('open');
         });
-        document.getElementById('userProfileOverlay').addEventListener('click', function (e) {
+        document.getElementById('userProfileOverlay').addEventListener('click', function(e) {
             if (e.target === this) this.classList.remove('open');
         });
     }
@@ -1510,7 +1793,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const title = document.getElementById('userProfileModalTitle');
         const body = document.getElementById('userProfileModalBody');
         title.textContent = name + ' (@' + username + ')';
-        body.innerHTML = '<p style="text-align:center;color:var(--text-secondary);">Cargando...</p>';
+        body.innerHTML = '<p class="user-profile-empty">Cargando...</p>';
         overlay.classList.add('open');
 
         try {
@@ -1522,35 +1805,35 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
             const perfil = perfilSnap.exists() ? perfilSnap.val() : {};
             const postsArr = [];
-            if (postsSnap.exists()) postsSnap.forEach(function (c) { postsArr.push(c.val()); });
-            postsArr.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+            if (postsSnap.exists()) postsSnap.forEach(function(c) { postsArr.push(c.val()); });
+            postsArr.sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
             const clasesArr = [];
-            if (clasesSnap.exists()) clasesSnap.forEach(function (c) { clasesArr.push(c.val()); });
+            if (clasesSnap.exists()) clasesSnap.forEach(function(c) { clasesArr.push(c.val()); });
 
             let html = '';
-            html += '<div style="margin-bottom:1.25rem;">';
-            html += '<h4 style="font-size:0.9rem;margin-bottom:0.4rem;"><i class="fas fa-pen"></i> Acerca de</h4>';
-            html += '<p style="font-size:0.88rem;color:var(--text-secondary);">' + (perfil.bio || 'Sin descripción.') + '</p>';
+            html += '<div class="user-profile-section">';
+            html += '<h4><i class="fas fa-pen"></i> Acerca de</h4>';
+            html += '<p class="user-profile-bio-text">' + (perfil.bio || 'Sin descripción.') + '</p>';
             html += '</div>';
 
-            html += '<div style="margin-bottom:1.25rem;">';
-            html += '<h4 style="font-size:0.9rem;margin-bottom:0.4rem;"><i class="fas fa-calendar-alt"></i> Horario (' + clasesArr.length + ')</h4>';
+            html += '<div class="user-profile-section">';
+            html += '<h4><i class="fas fa-calendar-alt"></i> Horario (' + clasesArr.length + ')</h4>';
             if (clasesArr.length === 0) {
-                html += '<p style="font-size:0.85rem;color:var(--text-secondary);">Sin clases registradas.</p>';
+                html += '<p class="user-profile-empty">Sin clases registradas.</p>';
             } else {
-                clasesArr.forEach(function (c) {
-                    html += '<div style="font-size:0.85rem;padding:0.3rem 0;border-bottom:1px solid var(--border-color);">' + c.nombre + ' · ' + c.dias.join(', ') + ' · ' + c.horaInicio + '-' + c.horaFin + '</div>';
+                clasesArr.forEach(function(c) {
+                    html += '<div class="user-profile-class-item">' + c.nombre + ' · ' + c.dias.join(', ') + ' · ' + c.horaInicio + '-' + c.horaFin + '</div>';
                 });
             }
             html += '</div>';
 
-            html += '<div>';
-            html += '<h4 style="font-size:0.9rem;margin-bottom:0.4rem;"><i class="fas fa-newspaper"></i> Notas (' + postsArr.length + ')</h4>';
+            html += '<div class="user-profile-section">';
+            html += '<h4><i class="fas fa-newspaper"></i> Notas (' + postsArr.length + ')</h4>';
             if (postsArr.length === 0) {
-                html += '<p style="font-size:0.85rem;color:var(--text-secondary);">Sin notas.</p>';
+                html += '<p class="user-profile-empty">Sin notas.</p>';
             } else {
-                postsArr.forEach(function (p) {
-                    html += '<div style="font-size:0.85rem;padding:0.5rem 0;border-bottom:1px solid var(--border-color);"><div style="color:var(--text-secondary);font-size:0.75rem;">' + p.fecha + '</div>' + p.texto + '</div>';
+                postsArr.forEach(function(p) {
+                    html += '<div class="user-profile-post-item"><div class="user-profile-post-date">' + p.fecha + '</div>' + p.texto + '</div>';
                 });
             }
             html += '</div>';
@@ -1558,7 +1841,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             body.innerHTML = html;
         } catch (err) {
             console.error('Error cargando perfil de usuario:', err);
-            body.innerHTML = '<p style="text-align:center;color:#dc3545;">No se pudo cargar el perfil: ' + (err.code || err.message) + '</p>';
+            body.innerHTML = '<p class="social-error" style="text-align:center;">No se pudo cargar el perfil: ' + (err.code || err.message) + '</p>';
         }
     }
 
@@ -1568,20 +1851,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const container = document.getElementById('assistantMessages');
         if (!container) return;
         const bubble = document.createElement('div');
-        bubble.style.maxWidth = '85%';
-        bubble.style.padding = '0.6rem 0.85rem';
-        bubble.style.borderRadius = '12px';
-        bubble.style.whiteSpace = 'pre-wrap';
-        bubble.style.fontSize = '0.88rem';
-        if (role === 'user') {
-            bubble.style.alignSelf = 'flex-end';
-            bubble.style.background = 'var(--primary, #1a2332)';
-            bubble.style.color = '#fff';
-        } else {
-            bubble.style.alignSelf = 'flex-start';
-            bubble.style.background = 'rgba(0,0,0,0.06)';
-            bubble.style.color = 'var(--text-primary, #1a2332)';
-        }
+        bubble.className = 'assistant-message ' + (role === 'user' ? 'mine' : 'theirs');
         bubble.textContent = text;
         container.appendChild(bubble);
         container.scrollTop = container.scrollHeight;
@@ -1612,9 +1882,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const container = document.getElementById('assistantMessages');
         const typingBubble = document.createElement('div');
         typingBubble.id = 'assistantTyping';
-        typingBubble.style.alignSelf = 'flex-start';
-        typingBubble.style.color = 'var(--text-secondary, #4a5a6e)';
-        typingBubble.style.fontSize = '0.8rem';
+        typingBubble.className = 'assistant-typing';
         typingBubble.textContent = 'Escribiendo...';
         container.appendChild(typingBubble);
         container.scrollTop = container.scrollHeight;
@@ -1639,32 +1907,32 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     function buildAssistantUI() {
         if (document.getElementById('assistantButton')) return;
         const html = `
-            <button id="assistantButton" style="position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:var(--primary, #1a2332);color:#fff;border:none;box-shadow:0 4px 16px rgba(0,0,0,0.25);cursor:pointer;font-size:1.4rem;z-index:4000;">
+            <button id="assistantButton" class="assistant-fab">
                 <i class="fas fa-robot"></i>
             </button>
-            <div id="assistantPanel" style="position:fixed;bottom:92px;right:24px;width:340px;max-width:90vw;height:460px;max-height:70vh;background:var(--card-bg, #fff);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.25);display:none;flex-direction:column;overflow:hidden;z-index:4000;border:1px solid var(--border-color, rgba(0,0,0,0.08));">
-                <div style="padding:0.9rem 1rem;background:var(--primary,#1a2332);color:#fff;display:flex;justify-content:space-between;align-items:center;">
+            <div id="assistantPanel" class="assistant-panel">
+                <div class="assistant-panel-header">
                     <strong><i class="fas fa-robot"></i> Asistente Botardo</strong>
-                    <button id="assistantCloseBtn" style="background:none;border:none;color:#fff;font-size:1.2rem;cursor:pointer;">&times;</button>
+                    <button id="assistantCloseBtn" class="assistant-close-btn">&times;</button>
                 </div>
-                <div id="assistantMessages" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:0.6rem;"></div>
-                <div style="display:flex;gap:0.5rem;padding:0.75rem;border-top:1px solid var(--border-color,rgba(0,0,0,0.08));">
-                    <input type="text" id="assistantInput" placeholder="Escribe tu pregunta..." style="flex:1;padding:0.6rem 0.8rem;border-radius:10px;border:1px solid var(--border-color,rgba(0,0,0,0.1));outline:none;" />
+                <div id="assistantMessages" class="assistant-messages"></div>
+                <div class="assistant-input-row">
+                    <input type="text" id="assistantInput" placeholder="Escribe tu pregunta..." />
                     <button id="assistantSendBtn" class="btn btn-primary btn-sm"><i class="fas fa-paper-plane"></i></button>
                 </div>
             </div>
         `;
         document.body.insertAdjacentHTML('beforeend', html);
 
-        document.getElementById('assistantButton').addEventListener('click', function () {
+        document.getElementById('assistantButton').addEventListener('click', function() {
             const panel = document.getElementById('assistantPanel');
             panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
         });
-        document.getElementById('assistantCloseBtn').addEventListener('click', function () {
+        document.getElementById('assistantCloseBtn').addEventListener('click', function() {
             document.getElementById('assistantPanel').style.display = 'none';
         });
         document.getElementById('assistantSendBtn').addEventListener('click', sendAssistantMessage);
-        document.getElementById('assistantInput').addEventListener('keydown', function (e) {
+        document.getElementById('assistantInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') { e.preventDefault(); sendAssistantMessage(); }
         });
 
@@ -1672,13 +1940,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (menuToggle) {
-        menuToggle.addEventListener('click', function (e) {
+        menuToggle.addEventListener('click', function(e) {
             e.stopPropagation();
             sidebar.classList.toggle('open');
         });
     }
 
-    document.addEventListener('click', function (e) {
+    document.addEventListener('click', function(e) {
         if (window.innerWidth <= 768) {
             const isSidebar = sidebar.contains(e.target);
             const isMenuToggle = menuToggle.contains(e.target);
@@ -1689,7 +1957,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     });
 
     navLinks.forEach(link => {
-        link.addEventListener('click', function (e) {
+        link.addEventListener('click', function(e) {
             e.preventDefault();
             const sectionId = this.dataset.section;
             navigateTo(`section-${sectionId}`);
@@ -1697,24 +1965,24 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     });
 
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', function () {
+        logoutBtn.addEventListener('click', function() {
             if (confirm('¿Estás seguro de que quieres cerrar sesión?')) {
                 if (presenceRefHandle) remove(presenceRefHandle);
                 signOut(auth)
-                    .then(function () { window.location.href = '../html/login.html'; })
-                    .catch(function () { window.location.href = '../html/login.html'; });
+                    .then(function() { window.location.href = '../html/login.html'; })
+                    .catch(function() { window.location.href = '../html/login.html'; });
             }
         });
     }
 
     if (notifBtn) {
-        notifBtn.addEventListener('click', function (e) {
+        notifBtn.addEventListener('click', function(e) {
             e.stopPropagation();
             notifDropdown.classList.toggle('open');
             actualizarBadge();
         });
 
-        document.addEventListener('click', function (e) {
+        document.addEventListener('click', function(e) {
             if (!notifBtn.contains(e.target) && !notifDropdown.contains(e.target)) {
                 notifDropdown.classList.remove('open');
             }
@@ -1722,7 +1990,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         const notifTabs = document.querySelectorAll('.notif-tab');
         notifTabs.forEach(tab => {
-            tab.addEventListener('click', function () {
+            tab.addEventListener('click', function() {
                 notifTabs.forEach(t => t.classList.remove('active'));
                 this.classList.add('active');
                 const target = this.dataset.tab;
@@ -1733,7 +2001,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
 
         document.querySelectorAll('.notif-mark-all').forEach(btn => {
-            btn.addEventListener('click', function () {
+            btn.addEventListener('click', function() {
                 const panel = this.closest('.notif-panel');
                 if (panel) panel.querySelectorAll('.notif-item.unread').forEach(item => item.classList.remove('unread'));
                 actualizarBadge();
@@ -1742,7 +2010,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (saveProfileBtn) {
-        saveProfileBtn.addEventListener('click', async function () {
+        saveProfileBtn.addEventListener('click', async function() {
             const name = editName.value.trim();
             const email = editEmail.value.trim();
 
@@ -1825,13 +2093,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (startCameraBtn) {
-        startCameraBtn.addEventListener('click', function () {
+        startCameraBtn.addEventListener('click', function() {
             if (cameraActive) stopCamera(); else startCamera();
         });
     }
 
     if (captureBtn) {
-        captureBtn.addEventListener('click', function () {
+        captureBtn.addEventListener('click', function() {
             if (!cameraActive || !videoFeed.srcObject) return;
 
             captureCount++;
@@ -1854,7 +2122,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     if (switchCameraBtn) {
-        switchCameraBtn.addEventListener('click', function () {
+        switchCameraBtn.addEventListener('click', function() {
             facingMode = facingMode === 'user' ? 'environment' : 'user';
             if (cameraActive) startCamera();
         });
@@ -1862,7 +2130,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     const newProjectBtn = document.getElementById('newProjectBtn');
     if (newProjectBtn) {
-        newProjectBtn.addEventListener('click', function () {
+        newProjectBtn.addEventListener('click', function() {
             alert('Los proyectos se crean manualmente en la carpeta html/proyectos/\n\n' +
                 'Para agregar un nuevo proyecto:\n' +
                 '1. Crea un archivo .html en html/proyectos/\n' +
@@ -1907,14 +2175,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     </div>
                     <div class="modal-body">
                         <div class="form-group">
-                            <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
-                                <input type="checkbox" id="notifLiveToggle" style="width:18px;height:18px;" />
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="notifLiveToggle" />
                                 Notificaciones en vivo (clases próximas, en curso)
                             </label>
                         </div>
                         <div class="form-group">
-                            <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;">
-                                <input type="checkbox" id="notifSistemaToggle" style="width:18px;height:18px;" />
+                            <label class="notif-toggle-row">
+                                <input type="checkbox" id="notifSistemaToggle" />
                                 Notificaciones del sistema (cambios en tu horario)
                             </label>
                         </div>
@@ -1930,10 +2198,10 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         document.getElementById('notifSettingsClose').addEventListener('click', closeNotifSettingsModal);
         document.getElementById('notifSettingsCancel').addEventListener('click', closeNotifSettingsModal);
-        document.getElementById('notifSettingsOverlay').addEventListener('click', function (e) {
+        document.getElementById('notifSettingsOverlay').addEventListener('click', function(e) {
             if (e.target === this) closeNotifSettingsModal();
         });
-        document.getElementById('notifSettingsSave').addEventListener('click', async function () {
+        document.getElementById('notifSettingsSave').addEventListener('click', async function() {
             const btn = this;
             notifSettings.live = document.getElementById('notifLiveToggle').checked;
             notifSettings.sistema = document.getElementById('notifSistemaToggle').checked;
@@ -1971,13 +2239,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
             const perfil = perfilSnap.exists() ? perfilSnap.val() : {};
             const postsData = [];
-            if (postsSnap.exists()) postsSnap.forEach(function (c) { postsData.push(c.val()); });
+            if (postsSnap.exists()) postsSnap.forEach(function(c) { postsData.push(c.val()); });
             const clasesData = [];
-            if (clasesSnap.exists()) clasesSnap.forEach(function (c) { clasesData.push(c.val()); });
+            if (clasesSnap.exists()) clasesSnap.forEach(function(c) { clasesData.push(c.val()); });
             const followingData = [];
-            if (followingSnap.exists()) followingSnap.forEach(function (c) { followingData.push(c.val()); });
+            if (followingSnap.exists()) followingSnap.forEach(function(c) { followingData.push(c.val()); });
             const followersData = [];
-            if (followersSnap.exists()) followersSnap.forEach(function (c) { followersData.push(c.val()); });
+            if (followersSnap.exists()) followersSnap.forEach(function(c) { followersData.push(c.val()); });
 
             const ahora = new Date().toLocaleString('es-ES');
             const linea = '========================================';
@@ -2008,7 +2276,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             if (postsData.length === 0) {
                 contenido += 'No tienes notas guardadas.\n\n';
             } else {
-                postsData.forEach(function (p, i) {
+                postsData.forEach(function(p, i) {
                     contenido += '[' + (i + 1) + '] ' + p.fecha + '\n';
                     contenido += p.texto + '\n\n';
                 });
@@ -2020,7 +2288,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             if (clasesData.length === 0) {
                 contenido += 'No tienes clases registradas.\n\n';
             } else {
-                clasesData.forEach(function (c) {
+                clasesData.forEach(function(c) {
                     contenido += '- ' + c.nombre + ' | ' + c.dias.join(', ') + ' | ' + c.horaInicio + ' a ' + c.horaFin + '\n';
                 });
                 contenido += '\n';
@@ -2032,7 +2300,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             if (followingData.length === 0) {
                 contenido += 'No sigues a nadie.\n\n';
             } else {
-                followingData.forEach(function (f) {
+                followingData.forEach(function(f) {
                     contenido += '- ' + f.name + ' (@' + f.username + ')\n';
                 });
                 contenido += '\n';
@@ -2044,7 +2312,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             if (followersData.length === 0) {
                 contenido += 'Nadie te sigue todavía.\n\n';
             } else {
-                followersData.forEach(function (f) {
+                followersData.forEach(function(f) {
                     contenido += '- ' + f.name + ' (@' + f.username + ')\n';
                 });
                 contenido += '\n';
@@ -2082,13 +2350,43 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         initClases();
         initPerfil();
         buildSocialUI();
-        loadFollowing();
-        loadFollowers();
-        buildOnlineUsersCard();
+        initSocialListeners();
         initPresence();
         buildAssistantUI();
         cargarNotifSettings();
         initChatUI();
+        renderActivityTimeline();
+
+        const headerSearchInput = document.getElementById('searchInput');
+        const searchSuggestionsBox = document.getElementById('searchSuggestions');
+        if (headerSearchInput) {
+            headerSearchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); ocultarSugerencias(); realizarBusquedaGlobal(); }
+            });
+            headerSearchInput.addEventListener('input', function() {
+                renderSearchSuggestions(headerSearchInput.value);
+            });
+            headerSearchInput.addEventListener('focus', function() {
+                if (headerSearchInput.value) renderSearchSuggestions(headerSearchInput.value);
+            });
+        }
+        if (searchSuggestionsBox) {
+            searchSuggestionsBox.addEventListener('click', function(e) {
+                const item = e.target.closest('.search-suggestion-item');
+                if (!item) return;
+                if (item.dataset.type === 'section') {
+                    navigateTo(item.dataset.target);
+                } else if (item.dataset.type === 'contact') {
+                    navigateTo('section-mensajes');
+                    abrirChat(item.dataset.uid, item.dataset.name, item.dataset.username);
+                }
+                if (headerSearchInput) headerSearchInput.value = '';
+                ocultarSugerencias();
+            });
+        }
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.header-search')) ocultarSugerencias();
+        });
 
         updateCameraStatus(false, 'Desconectada');
 
@@ -2119,12 +2417,20 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     let resizeTimer;
-    window.addEventListener('resize', function () {
+    window.addEventListener('resize', function() {
         clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => { }, 250);
+        resizeTimer = setTimeout(function() {
+            const messagesContainer = document.getElementById('messagesContainer');
+            if (!messagesContainer) return;
+            if (window.innerWidth <= 768 && currentChatUid) {
+                messagesContainer.classList.add('chat-open');
+            } else if (window.innerWidth > 768) {
+                messagesContainer.classList.remove('chat-open');
+            }
+        }, 200);
     });
 
-    onAuthStateChanged(auth, function (user) {
+    onAuthStateChanged(auth, function(user) {
         if (!user) {
             window.location.href = '../html/login.html';
             return;
