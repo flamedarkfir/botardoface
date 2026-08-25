@@ -639,16 +639,65 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         actualizarStats();
     }
 
-    function obtenerHorasUnicas() {
+    function obtenerHorasUnicas(clasesArr) {
         const horas = new Set();
-        clases.forEach(c => horas.add(c.horaInicio));
+        (clasesArr || clases).forEach(c => horas.add(c.horaInicio));
         return Array.from(horas).sort();
     }
 
-    function obtenerDiasConClases() {
+    function obtenerDiasConClases(clasesArr) {
         const dias = new Set();
-        clases.forEach(c => c.dias.forEach(d => dias.add(d)));
+        (clasesArr || clases).forEach(c => c.dias.forEach(d => dias.add(d)));
         return diasSemana.filter(d => dias.has(d));
+    }
+
+    // Construye la misma grilla (tabla día x hora) del horario, reutilizable
+    // tanto para la sección "Mi Horario" (editable) como para la pestaña
+    // "Horario" del perfil (solo lectura), para que siempre se vea igual.
+    function construirGridHorarioHtml(clasesArr, opciones) {
+        const editable = !!(opciones && opciones.editable);
+        const horas = obtenerHorasUnicas(clasesArr);
+        const diasConClases = obtenerDiasConClases(clasesArr);
+
+        let html = '<table class="schedule-table"><thead><tr><th>Hora</th>';
+        diasConClases.forEach(dia => { html += `<th>${dia}</th>`; });
+        html += '</tr></thead><tbody>';
+
+        horas.forEach(hora => {
+            html += `<tr><td class="hour-cell">${hora}</td>`;
+            diasConClases.forEach(dia => {
+                const clase = clasesArr.find(c => c.dias.includes(dia) && c.horaInicio === hora);
+                if (clase) {
+                    const activa = estaActivaAhora(clase);
+                    const esRecreoClase = esRecreo(clase);
+                    const bgColor = esRecreoClase ? '#fff3e0' : clase.color;
+                    const textColor = esRecreoClase ? '#e65100' : clase.colorText;
+                    const borderColor = esRecreoClase ? '#ff9800' : (activa ? '#2e7d32' : 'transparent');
+                    const icono = esRecreoClase ? 'fa-coffee' : clase.icono;
+                    const label = esRecreoClase ? 'RECREO' : '';
+
+                    html += `
+                        <td class="class-cell" style="background:${bgColor};color:${textColor};border-left:3px solid ${borderColor};">
+                            <div class="class-cell-content">
+                                <i class="fas ${icono}"></i>
+                                <span class="class-name">${clase.nombre}</span>
+                                ${label ? `<span class="recreo-badge">${label}</span>` : ''}
+                                ${activa ? `<span class="active-dot">●</span>` : ''}
+                                ${editable ? `<button class="class-edit-btn" onclick="editarClase('${clase.id}')"><i class="fas fa-edit"></i></button>
+                                <button class="class-delete-btn" onclick="eliminarClase('${clase.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                            </div>
+                            <div class="class-time">${clase.horaInicio} - ${clase.horaFin}</div>
+                        </td>
+                    `;
+                } else {
+                    html += `<td class="empty-cell"></td>`;
+                }
+            });
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        return html;
     }
 
     function renderizarHorario() {
@@ -669,48 +718,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             return;
         }
 
-        const horas = obtenerHorasUnicas();
-        const diasConClases = obtenerDiasConClases();
-
-        let html = '<table class="schedule-table"><thead><tr><th>Hora</th>';
-        diasConClases.forEach(dia => { html += `<th>${dia}</th>`; });
-        html += '</tr></thead><tbody>';
-
-        horas.forEach(hora => {
-            html += `<tr><td class="hour-cell">${hora}</td>`;
-            diasConClases.forEach(dia => {
-                const clase = clases.find(c => c.dias.includes(dia) && c.horaInicio === hora);
-                if (clase) {
-                    const activa = estaActivaAhora(clase);
-                    const esRecreoClase = esRecreo(clase);
-                    const bgColor = esRecreoClase ? '#fff3e0' : clase.color;
-                    const textColor = esRecreoClase ? '#e65100' : clase.colorText;
-                    const borderColor = esRecreoClase ? '#ff9800' : (activa ? '#2e7d32' : 'transparent');
-                    const icono = esRecreoClase ? 'fa-coffee' : clase.icono;
-                    const label = esRecreoClase ? 'RECREO' : '';
-
-                    html += `
-                        <td class="class-cell" style="background:${bgColor};color:${textColor};border-left:3px solid ${borderColor};">
-                            <div class="class-cell-content">
-                                <i class="fas ${icono}"></i>
-                                <span class="class-name">${clase.nombre}</span>
-                                ${label ? `<span class="recreo-badge">${label}</span>` : ''}
-                                ${activa ? `<span class="active-dot">●</span>` : ''}
-                                <button class="class-edit-btn" onclick="editarClase('${clase.id}')"><i class="fas fa-edit"></i></button>
-                                <button class="class-delete-btn" onclick="eliminarClase('${clase.id}')"><i class="fas fa-trash"></i></button>
-                            </div>
-                            <div class="class-time">${clase.horaInicio} - ${clase.horaFin}</div>
-                        </td>
-                    `;
-                } else {
-                    html += `<td class="empty-cell"></td>`;
-                }
-            });
-            html += '</tr>';
-        });
-
-        html += '</tbody></table>';
-        grid.innerHTML = html;
+        grid.innerHTML = construirGridHorarioHtml(clases, { editable: true });
     }
 
     function editarClase(id) {
@@ -726,14 +734,54 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             clases = clases.filter(c => c.id !== id);
             renderizarHorario();
             actualizarStats();
-            agregarNotificacionSistema('Clase eliminada', 'Has eliminado una clase del horario');
+            agregarNotificacionSistema('Clase eliminada', 'Has eliminado una clase del horario', 'section-clases');
         } catch (err) {
             console.error('Error eliminando clase:', err);
             alert('No se pudo eliminar la clase: ' + (err.code || err.message));
         }
     }
 
-    function agregarNotificacionSistema(titulo, mensaje) {
+    // Ejecuta la acción asociada a una notificación (o toast) al hacer click,
+    // según una convención simple de "target":
+    //   'section-xxx'              -> navega a esa sección
+    //   'perfil:UID:NOMBRE:USER'   -> abre el perfil de ese usuario
+    //   'chat:UID:NOMBRE:USER'     -> abre la conversación con ese usuario
+    function manejarClickNotificacion(target) {
+        if (!target) return;
+        const partes = target.split(':');
+        const tipo = partes[0];
+        if (tipo === 'perfil' && partes[1]) {
+            verPerfilUsuario(partes[1], decodeURIComponent(partes[2] || ''), partes[3] || '');
+            return;
+        }
+        if (tipo === 'chat' && partes[1]) {
+            navigateTo('section-mensajes');
+            switchMessagesTab('conversaciones');
+            abrirChat(partes[1], decodeURIComponent(partes[2] || ''), partes[3] || '');
+            return;
+        }
+        if (target.indexOf('section-') === 0 && document.getElementById(target)) {
+            navigateTo(target);
+            if (target === 'section-perfil') mostrarPerfilPropio();
+        }
+    }
+
+    window.manejarClickNotificacion = manejarClickNotificacion;
+
+    function wireNotifItemClick(item, target) {
+        if (!target) return;
+        item.classList.add('notif-clickable');
+        item.dataset.target = target;
+        item.addEventListener('click', function() {
+            item.classList.remove('unread');
+            actualizarBadge();
+            const dropdown = document.getElementById('notifDropdown');
+            if (dropdown) dropdown.classList.remove('open');
+            manejarClickNotificacion(target);
+        });
+    }
+
+    function agregarNotificacionSistema(titulo, mensaje, target) {
         if (notifSettings.sistema) {
             const list = document.querySelector('#notifSistema .notif-list');
             if (list) {
@@ -745,6 +793,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     <i class="fas fa-info-circle" style="color:#0d47a1;"></i>
                     <div><p><strong>${escapeHtml(titulo)}</strong> - ${escapeHtml(mensaje)}</p><span>Hace unos segundos</span></div>
                 `;
+                wireNotifItemClick(item, target);
                 list.prepend(item);
                 actualizarBadge();
             }
@@ -752,7 +801,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         agregarActividad('#0d47a1', titulo, mensaje);
     }
 
-    function agregarNotificacionLive(titulo, mensaje) {
+    function agregarNotificacionLive(titulo, mensaje, target) {
         if (notifSettings.live) {
             const list = document.querySelector('#notifLive .notif-list');
             if (list) {
@@ -764,6 +813,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     <i class="fas fa-bell" style="color:#e65100;"></i>
                     <div><p><strong>${escapeHtml(titulo)}</strong> - ${escapeHtml(mensaje)}</p><span>Hace unos segundos</span></div>
                 `;
+                wireNotifItemClick(item, target);
                 list.prepend(item);
                 actualizarBadge();
             }
@@ -774,6 +824,46 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     function agregarNotificacionBienvenida() {
         const nombre = (currentUserData && currentUserData.name) ? currentUserData.name : 'Usuario';
         agregarNotificacionLive('¡Bienvenido/a!', `Bienvenido/a ${nombre} a Botardo Face App!`);
+    }
+
+    const MAX_TOASTS_VISIBLES = 3;
+
+    // Toast genérico (además del de mensajes de chat que ya existía) para
+    // avisos en vivo mientras el usuario está usando la app: nuevo seguidor,
+    // clase que empieza, etc. Máximo 3 visibles a la vez.
+    function mostrarToastGenerico(opciones) {
+        let container = document.getElementById('toastContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.className = 'toast-container';
+            document.body.appendChild(container);
+        }
+
+        while (container.children.length >= MAX_TOASTS_VISIBLES) {
+            container.firstElementChild.remove();
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'chat-toast';
+        toast.innerHTML = `
+            <div class="chat-toast-avatar">${opciones.avatarHtml || '<i class="fas fa-bell"></i>'}</div>
+            <div class="chat-toast-body">
+                <span class="chat-toast-name">${escapeHtml(opciones.titulo)}</span>
+                <span class="chat-toast-text">${escapeHtml(opciones.mensaje)}</span>
+            </div>
+        `;
+        toast.addEventListener('click', function() {
+            toast.classList.remove('show');
+            setTimeout(function() { toast.remove(); }, 250);
+            if (opciones.target) manejarClickNotificacion(opciones.target);
+        });
+        container.appendChild(toast);
+        requestAnimationFrame(function() { toast.classList.add('show'); });
+        setTimeout(function() {
+            toast.classList.remove('show');
+            setTimeout(function() { toast.remove(); }, 250);
+        }, 6000);
     }
 
     function actualizarBadge() {
@@ -949,12 +1039,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 await update(ref(rtdb, 'users/' + currentUser.uid + '/clases/' + id), claseData);
                 const index = clases.findIndex(c => c.id === id);
                 if (index !== -1) clases[index] = Object.assign({ id: id }, claseData);
-                agregarNotificacionSistema('Actualizado', `Has actualizado "${nombre}"`);
+                agregarNotificacionSistema('Actualizado', `Has actualizado "${nombre}"`, 'section-clases');
             } else {
                 const newRef = push(ref(rtdb, 'users/' + currentUser.uid + '/clases'));
                 await set(newRef, claseData);
                 clases.push(Object.assign({ id: newRef.key }, claseData));
-                agregarNotificacionSistema('Nuevo', `Has agregado "${nombre}" al horario`);
+                agregarNotificacionSistema('Nuevo', `Has agregado "${nombre}" al horario`, 'section-clases');
             }
             renderizarHorario();
             actualizarStats();
@@ -980,27 +1070,58 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         setInterval(verificarNotificacionesClases, 30000);
     }
 
+    // Guarda qué avisos (próximo / comenzó) ya se dispararon hoy, para no
+    // repetirlos en cada chequeo de 30s. Se reinicia solo al cambiar de día.
+    let clasesNotificadasHoy = { fecha: null, avisos: new Set() };
+
+    function minutosDesdeMedianoche(horaStr) {
+        const [h, m] = horaStr.split(':').map(Number);
+        return h * 60 + m;
+    }
+
     function verificarNotificacionesClases() {
         const ahora = new Date();
+        const hoyStr = getTodayString();
+        if (clasesNotificadasHoy.fecha !== hoyStr) {
+            clasesNotificadasHoy = { fecha: hoyStr, avisos: new Set() };
+        }
+
         const diaActual = diasSemana[ahora.getDay() === 0 ? 6 : ahora.getDay() - 1];
-        const horaActualMin = ahora.getHours() * 100 + ahora.getMinutes();
+        const horaActualMin = ahora.getHours() * 60 + ahora.getMinutes();
 
         clases.forEach(clase => {
             if (!clase.dias.includes(diaActual)) return;
 
-            const inicioMin = parseInt(clase.horaInicio.replace(':', ''));
-            const finMin = parseInt(clase.horaFin.replace(':', ''));
-            const diffInicio = inicioMin - horaActualMin;
+            const inicioMin = minutosDesdeMedianoche(clase.horaInicio);
+            const finMin = minutosDesdeMedianoche(clase.horaFin);
+            const diffInicio = inicioMin - horaActualMin; // minutos reales hasta que empiece
             const diffFin = finMin - horaActualMin;
 
-            if (diffInicio > 0 && diffInicio <= 5) {
+            const claveProximo = clase.id + ':' + diaActual + ':proximo';
+            const claveComenzo = clase.id + ':' + diaActual + ':comenzo';
+
+            if (diffInicio > 0 && diffInicio <= 5 && !clasesNotificadasHoy.avisos.has(claveProximo)) {
+                clasesNotificadasHoy.avisos.add(claveProximo);
                 const emoji = esRecreo(clase) ? '☕' : '⏰';
-                agregarNotificacionLive(`${emoji} Próximo`, `"${clase.nombre}" comienza en ${Math.round(diffInicio)} minutos`);
+                agregarNotificacionLive(
+                    `${emoji} Próximo`,
+                    `"${clase.nombre}" comienza en ${diffInicio} minuto${diffInicio === 1 ? '' : 's'} (${diaActual})`,
+                    'section-clases'
+                );
             }
 
-            if (diffInicio <= 0 && diffFin > 0 && Math.random() < 0.1) {
+            if (diffInicio <= 0 && diffFin > 0 && !clasesNotificadasHoy.avisos.has(claveComenzo)) {
+                clasesNotificadasHoy.avisos.add(claveComenzo);
                 const emoji = esRecreo(clase) ? '☕' : '📚';
-                agregarNotificacionLive(`${emoji} En curso`, `"${clase.nombre}" está en progreso`);
+                const titulo = esRecreo(clase) ? `${emoji} Recreo` : `${emoji} Ha comenzado`;
+                const mensaje = `"${clase.nombre}" empezó ahora · ${diaActual} · ${clase.horaInicio} - ${clase.horaFin}`;
+                agregarNotificacionLive(titulo, mensaje, 'section-clases');
+                mostrarToastGenerico({
+                    titulo: titulo,
+                    mensaje: mensaje,
+                    avatarHtml: `<i class="fas ${esRecreo(clase) ? 'fa-coffee' : (clase.icono || 'fa-book')}"></i>`,
+                    target: 'section-clases'
+                });
             }
         });
 
@@ -1449,7 +1570,16 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 newSet.forEach(function(uid) {
                     if (!followersSet.has(uid)) {
                         const u = newList.find(function(x) { return x.uid === uid; });
-                        if (u) agregarNotificacionLive('Nuevo seguidor', `${u.name} (@${u.username}) ahora te sigue`);
+                        if (u) {
+                            const target = 'perfil:' + uid + ':' + encodeURIComponent(u.name || '') + ':' + (u.username || '');
+                            agregarNotificacionLive('Nuevo seguidor', `${u.name} (@${u.username}) ahora te sigue`, target);
+                            mostrarToastGenerico({
+                                titulo: 'Nuevo seguidor',
+                                mensaje: `${u.name} (@${u.username}) ahora te sigue`,
+                                avatarHtml: escapeHtml((u.name || '?').charAt(0).toUpperCase()),
+                                target: target
+                            });
+                        }
                     }
                 });
             }
@@ -1635,6 +1765,9 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             container.id = 'toastContainer';
             container.className = 'toast-container';
             document.body.appendChild(container);
+        }
+        while (container.children.length >= MAX_TOASTS_VISIBLES) {
+            container.firstElementChild.remove();
         }
         const toast = document.createElement('div');
         toast.className = 'chat-toast';
@@ -1982,31 +2115,34 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }).join('');
     }
 
+    let profileHorarioTimer = null;
+
     function renderProfileHorarioResumen(clasesArr) {
         const container = document.getElementById('profileHorarioResumen');
         if (!container) return;
         if (!clasesArr || clasesArr.length === 0) {
             container.innerHTML = '<p class="social-empty">Sin horario registrado todavía.</p>';
+            if (profileHorarioTimer) { clearInterval(profileHorarioTimer); profileHorarioTimer = null; }
             return;
         }
-        const ordenDias = diasSemana;
-        const copia = clasesArr.slice().sort(function(a, b) {
-            const diaA = ordenDias.indexOf((a.dias && a.dias[0]) || '');
-            const diaB = ordenDias.indexOf((b.dias && b.dias[0]) || '');
-            if (diaA !== diaB) return diaA - diaB;
-            return (a.horaInicio || '').localeCompare(b.horaInicio || '');
-        });
-        container.innerHTML = copia.map(function(c) {
-            return `
-                <div class="profile-schedule-item">
-                    <i class="fas ${c.icono || 'fa-book'}" style="color:${c.colorText || 'var(--primary)'};"></i>
-                    <div class="profile-schedule-info">
-                        <span class="profile-schedule-name">${escapeHtml(c.nombre)}</span>
-                        <span class="profile-schedule-meta">${(c.dias || []).join(', ')} · ${c.horaInicio} - ${c.horaFin}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
+
+        // Mismo grid (misma función) que "Mi Horario", así siempre se ve
+        // idéntico a como el usuario lo configuró — solo que de solo lectura.
+        container.classList.add('schedule-wrapper', 'profile-schedule-wrapper');
+        container.innerHTML = construirGridHorarioHtml(clasesArr, { editable: false });
+
+        // Refresca el punto de "clase activa" cada minuto mientras el
+        // perfil esté visible, para que coincida con la hora real.
+        if (profileHorarioTimer) clearInterval(profileHorarioTimer);
+        profileHorarioTimer = setInterval(function() {
+            const stillVisible = document.getElementById('profileHorarioResumen');
+            if (!stillVisible || !document.body.contains(stillVisible)) {
+                clearInterval(profileHorarioTimer);
+                profileHorarioTimer = null;
+                return;
+            }
+            stillVisible.innerHTML = construirGridHorarioHtml(clasesArr, { editable: false });
+        }, 60000);
     }
 
     function renderPostsGridGeneric(postsArr, soyPropietario) {
@@ -2260,6 +2396,7 @@ CONOCIMIENTO DE LA APLICACIÓN (úsalo para responder con precisión):
 - Perfil: cada usuario tiene nombre, nombre de usuario, descripción (bio), un emoji de estado, notas/publicaciones, horario de clases, materias, seguidores y seguidos. Dos usuarios son "amigos" cuando se siguen mutuamente.
 - Mensajería: solo puedes escribirle a alguien si esa persona te sigue a ti.
 - Tienes un límite de 5 mensajes diarios contigo (la IA) para cuentas gratuitas; los usuarios Premium (función futura) no tendrán límite.
+- Función VIP: en cada mensaje recibirás un bloque "[CONTEXTO DEL HORARIO EN TIEMPO REAL]" con el horario real de hoy del usuario, su clase actual y sus materias. Úsalo para responder con precisión cuando pregunten en qué clase están, qué les toca hoy, cuánto falta para la siguiente clase, etc. No inventes horarios: si el contexto dice que no hay clases hoy o ninguna clase activa, dilo tal cual. No repitas el bloque de contexto en tu respuesta, es solo para ti.
 - Responde siempre en español, de forma breve, cálida y clara. Puedes usar formato Markdown (negrita con **, listas con -, etc.) cuando ayude a la claridad.
 
 NAVEGACIÓN: si el usuario te pide ir a una sección de la app (por ejemplo "llévame a mi perfil", "abre configuración", "muéstrame mis mensajes"), responde brevemente confirmando la acción y termina tu respuesta agregando en una línea aparte, exactamente, una de estas marcas según corresponda:
@@ -2293,6 +2430,37 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         if (!match) return { texto: texto, target: null };
         const limpio = texto.replace(match[0], '').trim();
         return { texto: limpio, target: match[1] };
+    }
+
+    // Función VIP: le da a la IA visibilidad en tiempo real del horario del
+    // usuario (materias, horario de hoy y en qué clase está ahora mismo).
+    // Se recalcula en cada mensaje (no se guarda en el historial) para que
+    // nunca quede desactualizado dentro de una misma conversación larga.
+    function construirContextoHorarioIA() {
+        const ahora = new Date();
+        const diaActual = diasSemana[ahora.getDay() === 0 ? 6 : ahora.getDay() - 1];
+        const horaActual = String(ahora.getHours()).padStart(2, '0') + ':' + String(ahora.getMinutes()).padStart(2, '0');
+
+        const clasesHoy = clases
+            .filter(function(c) { return c.dias.includes(diaActual); })
+            .slice()
+            .sort(function(a, b) { return a.horaInicio.localeCompare(b.horaInicio); });
+
+        const claseActual = clasesHoy.find(function(c) { return estaActivaAhora(c); });
+        const proxima = clasesHoy.find(function(c) { return c.horaInicio > horaActual; });
+        const materias = obtenerMateriasUnicas(clases);
+
+        let texto = `[CONTEXTO DEL HORARIO EN TIEMPO REAL]\nHoy es ${diaActual}, hora actual ${horaActual}.\n`;
+        texto += clasesHoy.length
+            ? `Horario de hoy: ${clasesHoy.map(function(c) { return `${c.nombre} (${c.horaInicio}-${c.horaFin})`; }).join(', ')}.\n`
+            : 'No hay clases registradas para hoy.\n';
+        texto += claseActual
+            ? `Clase activa ahora mismo: "${claseActual.nombre}" (${claseActual.horaInicio}-${claseActual.horaFin}).\n`
+            : 'Ninguna clase está activa en este momento.\n';
+        texto += proxima ? `Siguiente clase: "${proxima.nombre}" a las ${proxima.horaInicio}.\n` : '';
+        texto += materias.length ? `Materias del usuario: ${materias.join(', ')}.\n` : 'El usuario aún no tiene materias registradas.\n';
+        texto += '[FIN DEL CONTEXTO]';
+        return texto;
     }
 
     let assistantChat = null;
@@ -2496,6 +2664,25 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         }
     }
 
+    // Bloquea/desbloquea por completo la caja de chat con la IA (input +
+    // botón de enviar) cuando se agota el límite diario de 5 mensajes,
+    // mostrando el aviso "Premium próximamente".
+    function actualizarBloqueoChatIA() {
+        const input = document.getElementById('assistantInput');
+        const sendBtn = document.getElementById('assistantSendBtn');
+        const banner = document.getElementById('assistantLimitBanner');
+        const bloqueado = !puedeEnviarMensajeIA();
+
+        if (input) {
+            input.disabled = bloqueado;
+            input.placeholder = bloqueado ? 'Límite diario alcanzado — Premium próximamente' : 'Escribe tu pregunta...';
+        }
+        if (sendBtn) sendBtn.disabled = bloqueado;
+        if (banner) banner.style.display = bloqueado ? 'block' : 'none';
+    }
+
+    window.actualizarBloqueoChatIA = actualizarBloqueoChatIA;
+
     async function sendAssistantMessage() {
         const input = document.getElementById('assistantInput');
         const sendBtn = document.getElementById('assistantSendBtn');
@@ -2503,7 +2690,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         if (!text) return;
 
         if (!puedeEnviarMensajeIA()) {
-            appendAssistantMessage('assistant', 'Has alcanzado tu límite de **5 mensajes** por hoy con la IA. Vuelve mañana, o espera la función **Premium** para mensajes ilimitados. 🌟');
+            actualizarBloqueoChatIA();
             return;
         }
 
@@ -2516,6 +2703,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         sendBtn.disabled = true;
         incrementarStatAiMessage();
         registrarUsoDiarioIA();
+        actualizarBloqueoChatIA();
         guardarMensajeIA(currentAiChatId, 'user', text);
 
         const container = document.getElementById('assistantMessages');
@@ -2528,7 +2716,8 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
 
         try {
             const chat = getAssistantChat();
-            const result = await chat.sendMessage(text);
+            const contextoHorario = construirContextoHorarioIA();
+            const result = await chat.sendMessage(contextoHorario + '\n\nMensaje del usuario: ' + text);
             let responseText = result.response.text();
             const typing = document.getElementById('assistantTyping');
             if (typing) typing.remove();
@@ -2552,7 +2741,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             if (typing) typing.remove();
             appendAssistantMessage('assistant', 'Lo siento, tuve un problema para responder: ' + (err.code || err.message || err));
         } finally {
-            sendBtn.disabled = false;
+            actualizarBloqueoChatIA();
         }
     }
 
@@ -2577,7 +2766,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                 </div>
                 <div id="assistantMessages" class="assistant-messages"></div>
                 <div class="assistant-limit-banner" id="assistantLimitBanner" style="display:none;">
-                    Has usado tus 5 mensajes de hoy. Vuelve mañana o espera Premium.
+                    <i class="fas fa-lock"></i> Alcanzaste tus 5 mensajes de hoy. <strong>Premium próximamente</strong> 🌟
                 </div>
                 <div class="assistant-input-row">
                     <input type="text" id="assistantInput" placeholder="Escribe tu pregunta..." />
@@ -2600,6 +2789,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                 }
                 renderAiChatsDropdown();
             }
+            if (abrir) actualizarBloqueoChatIA();
         });
         document.getElementById('assistantCloseBtn').addEventListener('click', function() {
             document.getElementById('assistantPanel').style.display = 'none';
