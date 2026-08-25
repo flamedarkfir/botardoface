@@ -3022,3 +3022,634 @@ body {
     max-height: 60vh;
     overflow-y: auto;
 }
+/* =========================================================
+   BOTARDO FACE — AMPLIACIONES (IA, Perfil, Mensajes, Apariencia)
+   ========================================================= */
+
+/* ---- Apariencia: tema oscuro y fondos ---- */
+:root {
+    --accent-user: #1a2332;
+}
+
+html[data-fondo="azul"] { --bg-main: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); }
+html[data-fondo="calido"] { --bg-main: linear-gradient(135deg, #fff8e1 0%, #ffe0b2 100%); }
+html[data-fondo="verde"] { --bg-main: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); }
+html[data-fondo="oscuro"] { --bg-main: linear-gradient(135deg, #0f151f 0%, #1a2332 100%); }
+
+html[data-tema="oscuro"] {
+    --bg-main: linear-gradient(135deg, #0c1119 0%, #131b28 100%);
+    --card-bg: rgba(30, 38, 51, 0.75);
+    --text-primary: #eef2f7;
+    --text-secondary: #a6b3c4;
+    --border-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-tema="oscuro"] body { background: var(--bg-main); color: var(--text-primary); }
+html[data-tema="oscuro"] .sidebar,
+html[data-tema="oscuro"] .dashboard-header,
+html[data-tema="oscuro"] .stat-card,
+html[data-tema="oscuro"] .panel-card,
+html[data-tema="oscuro"] .config-card,
+html[data-tema="oscuro"] .profile-bio,
+html[data-tema="oscuro"] .modal,
+html[data-tema="oscuro"] .messages-contacts,
+html[data-tema="oscuro"] .messages-chat,
+html[data-tema="oscuro"] .schedule-wrapper,
+html[data-tema="oscuro"] .camera-card,
+html[data-tema="oscuro"] .notif-dropdown,
+html[data-tema="oscuro"] .assistant-panel,
+html[data-tema="oscuro"] .post-card,
+html[data-tema="oscuro"] .social-list-item,
+html[data-tema="oscuro"] .profile-schedule-item,
+html[data-tema="oscuro"] .chat-contact-item {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+html[data-tema="oscuro"] input,
+html[data-tema="oscuro"] textarea,
+html[data-tema="oscuro"] select {
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+html[data-tema="oscuro"] input::placeholder,
+html[data-tema="oscuro"] textarea::placeholder {
+    color: rgba(238, 242, 247, 0.4);
+}
+
+/* ---- Header avatar como botón ---- */
+.header-user {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 12px;
+    transition: var(--transition);
+}
+
+.header-user:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+/* ---- Perfil: nuevo layout tipo perfil completo ---- */
+.profile-view {
+    max-width: 980px;
+    margin: 0 auto;
+    padding-bottom: 2rem;
+}
+
+.profile-back-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    padding: 0.4rem 0;
+}
+
+.profile-back-btn:hover { color: var(--primary); }
+
+.profile-banner {
+    height: 130px;
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, var(--accent-user, var(--primary)) 0%, var(--primary-light) 100%);
+    position: relative;
+    margin-bottom: -48px;
+    overflow: hidden;
+}
+
+.profile-banner-overlay {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18), transparent 60%);
+}
+
+.profile-top {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.2rem;
+    padding: 0 1.5rem;
+    flex-wrap: wrap;
+}
+
+.profile-avatar-xl {
+    width: 104px;
+    height: 104px;
+    border-radius: 50%;
+    border: 4px solid var(--card-bg);
+    background: #fff;
+    position: relative;
+    flex-shrink: 0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+}
+
+.profile-avatar-xl img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.status-emoji-lg {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    background: var(--card-bg);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    border: 2px solid #fff;
+    cursor: pointer;
+}
+
+.profile-identity {
+    flex: 1;
+    min-width: 200px;
+    padding-bottom: 0.25rem;
+}
+
+.profile-identity h2 {
+    font-size: 1.4rem;
+    margin-bottom: 0.15rem;
+}
+
+.profile-username {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+}
+
+.profile-bio-line {
+    font-size: 0.88rem;
+    color: var(--text-primary);
+    max-width: 480px;
+}
+
+.profile-actions {
+    display: flex;
+    gap: 0.5rem;
+    padding-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.profile-stats-row {
+    display: flex;
+    gap: 0.5rem;
+    margin: 1.25rem 1.5rem 0;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+}
+
+.profile-stat-btn,
+.profile-stat-static {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 0.65rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    min-width: 84px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: var(--transition);
+}
+
+.profile-stat-static { cursor: default; }
+
+.profile-stat-btn:hover,
+.profile-stat-btn.active {
+    border-color: var(--accent-user, var(--primary));
+    background: rgba(0,0,0,0.03);
+}
+
+.profile-stat-btn .stat-number,
+.profile-stat-static .stat-number {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.profile-stat-btn .stat-label,
+.profile-stat-static .stat-label {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+}
+
+.profile-tabs {
+    display: flex;
+    gap: 0.3rem;
+    margin: 1.25rem 1.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+}
+
+.profile-tab {
+    background: none;
+    border: none;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: var(--transition);
+}
+
+.profile-tab:hover { color: var(--text-primary); }
+
+.profile-tab.active {
+    color: var(--accent-user, var(--primary));
+    border-bottom-color: var(--accent-user, var(--primary));
+    font-weight: 600;
+}
+
+.profile-tab-panels {
+    padding: 1.25rem 1.5rem 0;
+}
+
+.profile-tab-panel { display: none; }
+.profile-tab-panel.active { display: block; }
+
+.profile-schedule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.profile-schedule-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0.65rem 0.9rem;
+}
+
+.profile-schedule-item i { font-size: 1.1rem; width: 22px; text-align: center; }
+
+.profile-schedule-info { display: flex; flex-direction: column; }
+.profile-schedule-name { font-weight: 600; font-size: 0.88rem; }
+.profile-schedule-meta { font-size: 0.75rem; color: var(--text-secondary); }
+
+.profile-materias-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.materia-chip {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.social-list-identity { display: flex; flex-direction: column; gap: 0.2rem; }
+
+.social-status-badge {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    background: rgba(0,0,0,0.05);
+    border-radius: 10px;
+    padding: 0.1rem 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    width: fit-content;
+}
+
+.social-status-badge.amigos {
+    background: rgba(46, 125, 50, 0.12);
+    color: #2e7d32;
+}
+
+.social-status-badge.nuevo {
+    background: rgba(13, 71, 161, 0.12);
+    color: #0d47a1;
+}
+
+#socialSearchCard { margin: 1.5rem; }
+
+/* ---- Mensajes: pestañas Conversaciones / IA ---- */
+.messages-top-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.messages-top-tab {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0.6rem 1.1rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    transition: var(--transition);
+}
+
+.messages-top-tab:hover { color: var(--text-primary); }
+
+.messages-top-tab.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent-user, var(--primary)) 0%, var(--primary-light) 100%);
+    border-color: transparent;
+}
+
+/* ---- Configuración: apariencia ---- */
+.config-subheading {
+    font-size: 1rem;
+    margin: 1.75rem 0 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.config-subheading:first-of-type { margin-top: 0.5rem; }
+
+.theme-options {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+}
+
+.theme-option {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.theme-option.active,
+.theme-option:hover {
+    border-color: var(--accent-user, var(--primary));
+    color: var(--text-primary);
+}
+
+.accent-options,
+.bg-options {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.accent-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+}
+
+.accent-swatch.active {
+    border-color: var(--text-primary);
+    transform: scale(1.1);
+}
+
+.bg-swatch {
+    width: 52px;
+    height: 32px;
+    border-radius: 8px;
+    border: 2px solid var(--border-color);
+    cursor: pointer;
+}
+
+.bg-swatch.active {
+    border-color: var(--text-primary);
+}
+
+.ai-usage-bar-wrap { margin-top: 0.75rem; }
+
+.ai-usage-bar {
+    height: 8px;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.08);
+    overflow: hidden;
+    margin-bottom: 0.4rem;
+}
+
+.ai-usage-bar-fill {
+    height: 100%;
+    background: linear-gradient(135deg, var(--accent-user, var(--primary)) 0%, var(--primary-light) 100%);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+#aiUsageText { font-size: 0.78rem; color: var(--text-secondary); }
+
+.config-card-placeholder {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    opacity: 0.7;
+    border-style: dashed;
+}
+
+/* ---- Estadísticas: actividad de cuenta ---- */
+.account-activity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.account-activity-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    background: rgba(0,0,0,0.03);
+    border-radius: 12px;
+    padding: 0.8rem 1rem;
+}
+
+.activity-item-label { font-size: 0.72rem; color: var(--text-secondary); }
+.activity-item-value { font-size: 0.95rem; font-weight: 600; }
+
+/* ---- Asistente IA: historial + markdown ---- */
+.assistant-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.assistant-icon-btn {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: #fff;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.assistant-icon-btn:hover { background: rgba(255,255,255,0.28); }
+
+.assistant-history-panel {
+    display: none;
+    flex-direction: column;
+    max-height: 160px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(0,0,0,0.02);
+    flex-shrink: 0;
+}
+
+.assistant-panel.history-open .assistant-history-panel { display: flex; }
+
+.assistant-history-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    padding: 0.6rem 0.9rem 0.3rem;
+}
+
+.assistant-history-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.assistant-history-item {
+    background: none;
+    border: none;
+    text-align: left;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.assistant-history-item:hover { background: rgba(0,0,0,0.04); }
+.assistant-history-item.active { color: var(--primary); font-weight: 600; }
+
+.assistant-loading {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    padding: 1rem;
+}
+
+.assistant-limit-banner {
+    background: rgba(198, 40, 40, 0.1);
+    color: #c62828;
+    font-size: 0.74rem;
+    padding: 0.5rem 0.9rem;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.assistant-message .md-p { margin: 0 0 0.35rem; }
+.assistant-message .md-p:last-child { margin-bottom: 0; }
+.assistant-message .md-list { margin: 0.2rem 0 0.4rem 1.1rem; }
+.assistant-message .md-list li { margin-bottom: 0.15rem; }
+.assistant-message .md-inline-code {
+    background: rgba(0,0,0,0.12);
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    font-family: monospace;
+    font-size: 0.85em;
+}
+.assistant-message.mine .md-inline-code { background: rgba(255,255,255,0.22); }
+.assistant-message .md-code-block {
+    background: rgba(0,0,0,0.15);
+    border-radius: 8px;
+    padding: 0.6rem 0.7rem;
+    overflow-x: auto;
+    font-size: 0.78rem;
+    margin: 0.3rem 0;
+}
+
+/* =========================================================
+   RESPONSIVE — pasada general
+   ========================================================= */
+@media (max-width: 992px) {
+    .profile-view { max-width: 100%; }
+    .account-activity-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+
+@media (max-width: 768px) {
+    .profile-banner { height: 96px; margin-bottom: -40px; }
+    .profile-avatar-xl { width: 84px; height: 84px; }
+    .status-emoji-lg { width: 24px; height: 24px; font-size: 0.85rem; }
+    .profile-top { padding: 0 1rem; gap: 0.8rem; }
+    .profile-identity h2 { font-size: 1.15rem; }
+    .profile-bio-line { max-width: 100%; font-size: 0.82rem; }
+    .profile-actions { width: 100%; }
+    .profile-actions .btn { flex: 1; justify-content: center; }
+    .profile-stats-row { margin: 1rem 1rem 0; }
+    .profile-stat-btn, .profile-stat-static { min-width: 74px; padding: 0.55rem 0.7rem; }
+    .profile-tabs { margin: 1rem 1rem 0; }
+    .profile-tab-panels { padding: 1rem 1rem 0; }
+    #socialSearchCard { margin: 1rem; }
+
+    .messages-top-tabs { margin-bottom: 0.75rem; }
+    .messages-top-tab { flex: 1; justify-content: center; padding: 0.6rem 0.5rem; font-size: 0.78rem; }
+
+    .theme-options, .accent-options, .bg-options { gap: 0.45rem; }
+    .config-subheading { font-size: 0.9rem; margin-top: 1.25rem; }
+    .account-activity-grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+    .account-activity-item { padding: 0.65rem 0.75rem; }
+    .activity-item-value { font-size: 0.85rem; }
+
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .config-grid { grid-template-columns: 1fr; }
+
+    .messages-ia-container { height: calc(100vh - 240px); min-height: 420px; }
+}
+
+@media (max-width: 480px) {
+    .profile-top { flex-direction: column; align-items: flex-start; }
+    .profile-actions { order: 3; }
+    .profile-stat-btn .stat-label, .profile-stat-static .stat-label { font-size: 0.62rem; }
+    .profile-tab { padding: 0.6rem 0.7rem; font-size: 0.76rem; }
+    .account-activity-grid { grid-template-columns: 1fr 1fr; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .theme-option { padding: 0.45rem 0.7rem; font-size: 0.74rem; }
+    .messages-top-tab span { display: inline; }
+}

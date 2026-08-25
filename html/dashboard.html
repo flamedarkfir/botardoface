@@ -83,10 +83,10 @@
                         </div>
                     </div>
                 </div>
-                <div class="header-user">
+                <button class="header-user" id="headerUserBtn" type="button">
                     <img src="../recourses/images/S/notfound.webp" alt="Usuario" id="userAvatar" />
                     <div class="user-info"><span class="user-name" id="userNameDisplay">Usuario</span><span class="user-role">Alumno</span></div>
-                </div>
+                </button>
             </div>
         </header>
 
@@ -114,88 +114,126 @@
         </section>
 
         <section id="section-perfil" class="dashboard-section">
-            <div class="profile-container">
-                <div class="profile-card">
-                    <div class="profile-header">
-                        <div class="profile-avatar-wrapper">
-                            <div class="profile-avatar">
-                                <img src="../recourses/images/S/notfound.webp" alt="Avatar" id="profileAvatar" />
-                                <div class="avatar-status">
-                                    <span class="status-emoji" id="statusEmoji">😊</span>
-                                </div>
-                            </div>
-                            <div class="profile-name-wrapper">
-                                <h2 id="profileName">Usuario</h2>
-                                <p class="profile-username" id="profileUsername">@usuario</p>
-                            </div>
-                        </div>
-                        <div class="profile-badge">
-                            <span class="badge-role">🎓 Alumno</span>
-                            <span class="badge-since" id="profileGrado">Grado: --</span>
-                        </div>
+            <div class="profile-view" id="profileView">
+                <button class="profile-back-btn" id="profileBackBtn" style="display:none;" type="button">
+                    <i class="fas fa-arrow-left"></i> Volver a mi perfil
+                </button>
+
+                <div class="profile-banner" id="profileBanner">
+                    <div class="profile-banner-overlay"></div>
+                </div>
+
+                <div class="profile-top">
+                    <div class="profile-avatar-xl">
+                        <img src="../recourses/images/S/notfound.webp" alt="Avatar" id="profileAvatar" />
+                        <span class="status-emoji-lg" id="statusEmoji">😊</span>
                     </div>
 
-                    <div class="profile-body">
-                        <div class="profile-bio">
-                            <div class="bio-header">
-                                <i class="fas fa-pen"></i>
-                                <h3>Acerca de mí</h3>
-                                <button class="btn-edit-bio" id="editBioBtn"><i class="fas fa-edit"></i></button>
-                            </div>
-                            <p id="profileBio" class="bio-text">Aún no has agregado una descripción.</p>
-                            <div class="bio-edit" id="bioEdit" style="display:none;">
-                                <textarea id="bioTextarea" rows="3" placeholder="Escribe algo sobre ti..."></textarea>
-                                <div class="bio-actions">
-                                    <button class="btn btn-sm btn-cancel" id="cancelBioBtn">Cancelar</button>
-                                    <button class="btn btn-sm btn-save" id="saveBioBtn">Guardar</button>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="profile-identity">
+                        <h2 id="profileName">Usuario</h2>
+                        <p class="profile-username" id="profileUsername">@usuario</p>
+                        <p class="profile-bio-line" id="profileBio">Aún no has agregado una descripción.</p>
+                    </div>
 
-                        <div class="profile-stats">
-                            <div class="stat-item">
-                                <span class="stat-number" id="followersCountStat">0</span>
-                                <span class="stat-label">Seguidores</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-number" id="followingCountStat">0</span>
-                                <span class="stat-label">Seguidos</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-number" id="friendCount">0</span>
-                                <span class="stat-label">Amigos</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-number" id="postCount">0</span>
-                                <span class="stat-label">Publicaciones</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-number" id="classCount">0</span>
-                                <span class="stat-label">Clases</span>
-                            </div>
-                        </div>
+                    <div class="profile-actions" id="profileActions">
+                        <button class="btn btn-secondary btn-sm" id="editBioBtn"><i class="fas fa-pen"></i> Editar descripción</button>
+                    </div>
+                </div>
 
-                        <div class="profile-posts">
-                            <div class="posts-header">
-                                <h3><i class="fas fa-newspaper"></i> Mis notas</h3>
-                                <button class="btn btn-primary btn-sm" id="addPostBtn"><i class="fas fa-plus"></i> Nueva nota</button>
-                            </div>
-                            <div class="posts-grid" id="postsGrid">
-                                <div class="empty-posts">
-                                    <i class="fas fa-pen-fancy"></i>
-                                    <p>No tienes notas aún</p>
-                                    <p style="font-size:0.8rem;">Comparte tus pensamientos o apuntes</p>
-                                </div>
+                <div class="bio-edit" id="bioEdit" style="display:none;">
+                    <textarea id="bioTextarea" rows="3" placeholder="Escribe algo sobre ti..."></textarea>
+                    <div class="bio-actions">
+                        <button class="btn btn-sm btn-cancel" id="cancelBioBtn">Cancelar</button>
+                        <button class="btn btn-sm btn-save" id="saveBioBtn">Guardar</button>
+                    </div>
+                </div>
+
+                <div class="profile-stats-row" id="profileStatsRow">
+                    <button class="profile-stat-btn" data-tab="publicaciones" type="button">
+                        <span class="stat-number" id="postCount">0</span>
+                        <span class="stat-label">Publicaciones</span>
+                    </button>
+                    <button class="profile-stat-btn" data-tab="seguidores" type="button">
+                        <span class="stat-number" id="followersCountStat">0</span>
+                        <span class="stat-label">Seguidores</span>
+                    </button>
+                    <button class="profile-stat-btn" data-tab="seguidos" type="button">
+                        <span class="stat-number" id="followingCountStat">0</span>
+                        <span class="stat-label">Seguidos</span>
+                    </button>
+                    <button class="profile-stat-btn" data-tab="amigos" type="button">
+                        <span class="stat-number" id="friendCount">0</span>
+                        <span class="stat-label">Amigos</span>
+                    </button>
+                    <div class="profile-stat-static">
+                        <span class="stat-number" id="classCount">0</span>
+                        <span class="stat-label">Clases</span>
+                    </div>
+                </div>
+
+                <div class="profile-tabs" id="profileTabs">
+                    <button class="profile-tab active" data-tab="publicaciones"><i class="fas fa-newspaper"></i> Publicaciones</button>
+                    <button class="profile-tab" data-tab="horario"><i class="fas fa-calendar-alt"></i> Horario</button>
+                    <button class="profile-tab" data-tab="materias"><i class="fas fa-book"></i> Materias</button>
+                    <button class="profile-tab" data-tab="seguidores"><i class="fas fa-user-friends"></i> Seguidores</button>
+                    <button class="profile-tab" data-tab="seguidos"><i class="fas fa-users"></i> Seguidos</button>
+                    <button class="profile-tab" data-tab="amigos"><i class="fas fa-user-group"></i> Amigos</button>
+                </div>
+
+                <div class="profile-tab-panels">
+                    <div class="profile-tab-panel active" id="profilePanel-publicaciones">
+                        <div class="posts-header" id="postsHeaderRow">
+                            <h3><i class="fas fa-newspaper"></i> Notas</h3>
+                            <button class="btn btn-primary btn-sm" id="addPostBtn"><i class="fas fa-plus"></i> Nueva nota</button>
+                        </div>
+                        <div class="posts-grid" id="postsGrid">
+                            <div class="empty-posts">
+                                <i class="fas fa-pen-fancy"></i>
+                                <p>No tienes notas aún</p>
+                                <p style="font-size:0.8rem;">Comparte tus pensamientos o apuntes</p>
                             </div>
                         </div>
                     </div>
+                    <div class="profile-tab-panel" id="profilePanel-horario">
+                        <div id="profileHorarioResumen" class="profile-schedule-list"></div>
+                    </div>
+                    <div class="profile-tab-panel" id="profilePanel-materias">
+                        <div id="profileMateriasChips" class="profile-materias-chips"></div>
+                    </div>
+                    <div class="profile-tab-panel" id="profilePanel-seguidores">
+                        <div id="followersListEl"><p class="social-empty">Nadie te sigue todavía.</p></div>
+                    </div>
+                    <div class="profile-tab-panel" id="profilePanel-seguidos">
+                        <div id="followingList"><p class="social-empty">Aún no sigues a nadie.</p></div>
+                    </div>
+                    <div class="profile-tab-panel" id="profilePanel-amigos">
+                        <div id="friendsListEl"><p class="social-empty">Todavía no tienes amigos en común.</p></div>
+                    </div>
+                </div>
+
+                <div class="profile-bio" id="socialSearchCard">
+                    <div class="bio-header"><i class="fas fa-user-plus"></i><h3>Buscar usuarios</h3></div>
+                    <div class="user-search-row">
+                        <input type="text" id="userSearchInput" placeholder="Buscar por nombre de usuario..." />
+                        <button class="btn btn-primary btn-sm" id="userSearchBtn"><i class="fas fa-search"></i></button>
+                    </div>
+                    <div id="userSearchResults"></div>
                 </div>
             </div>
         </section>
 
         <section id="section-mensajes" class="dashboard-section">
+            <div class="messages-top-tabs">
+                <button class="messages-top-tab active" data-mtab="conversaciones" type="button">
+                    <i class="fas fa-comment-dots"></i> Conversaciones
+                </button>
+                <button class="messages-top-tab" data-mtab="ia" type="button">
+                    <i class="fas fa-robot"></i> IA
+                </button>
+            </div>
+
             <div class="messages-container" id="messagesContainer">
-                <div class="messages-contacts">
+                <div class="messages-contacts" id="messagesPanelConversaciones">
                     <div class="messages-contacts-header">
                         <h3><i class="fas fa-comment-dots"></i> Conversaciones</h3>
                     </div>
@@ -214,6 +252,24 @@
                             <button class="btn btn-primary btn-sm" id="chatSendBtn"><i class="fas fa-paper-plane"></i></button>
                         </div>
                         <div id="chatBlockedNotice" class="chat-blocked-notice"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="messages-container messages-ia-container" id="messagesIaContainer" style="display:none;">
+                <div class="messages-contacts">
+                    <div class="messages-contacts-header">
+                        <h3><i class="fas fa-robot"></i> Chats con la IA</h3>
+                        <button class="btn btn-primary btn-sm" id="newAiChatFromMessagesBtn"><i class="fas fa-plus"></i></button>
+                    </div>
+                    <div id="aiChatsListMessages" class="chat-contacts-list">
+                        <p class="social-empty">Aún no has hablado con la IA.</p>
+                    </div>
+                </div>
+                <div class="messages-chat">
+                    <div class="chat-empty-state">
+                        <i class="fas fa-robot"></i>
+                        <p>Elige una conversación para abrirla en el asistente, o inicia una nueva.</p>
                     </div>
                 </div>
             </div>
@@ -275,6 +331,33 @@
                     <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-file-export"></i></div><div class="stat-info"><span class="stat-value" id="statExportCount">0</span><span class="stat-label">Datos exportados</span></div></div>
                     <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-user-group"></i></div><div class="stat-info"><span class="stat-value" id="statFriendCount">0</span><span class="stat-label">Amigos</span></div></div>
                     <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-robot"></i></div><div class="stat-info"><span class="stat-value" id="statAiMessages">0</span><span class="stat-label">Mensajes con la IA</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#ede7f6;color:#311b92;"><i class="fas fa-comments"></i></div><div class="stat-info"><span class="stat-value" id="statAiChats">0</span><span class="stat-label">Chats con la IA</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#e0f2f1;color:#004d40;"><i class="fas fa-newspaper"></i></div><div class="stat-info"><span class="stat-value" id="statPostCount">0</span><span class="stat-label">Notas publicadas</span></div></div>
+                </div>
+                <div class="panel-grid" style="margin-top:1.5rem;">
+                    <div class="panel-card full-width">
+                        <div class="panel-card-header"><h3><i class="fas fa-id-card"></i> Actividad de la cuenta</h3></div>
+                        <div class="panel-card-body">
+                            <div class="account-activity-grid">
+                                <div class="account-activity-item">
+                                    <span class="activity-item-label">Cuenta creada</span>
+                                    <span class="activity-item-value" id="statCreatedAt">--</span>
+                                </div>
+                                <div class="account-activity-item">
+                                    <span class="activity-item-label">Último inicio de sesión</span>
+                                    <span class="activity-item-value" id="statLastLogin">--</span>
+                                </div>
+                                <div class="account-activity-item">
+                                    <span class="activity-item-label">Plan actual</span>
+                                    <span class="activity-item-value" id="statPlan">Gratis</span>
+                                </div>
+                                <div class="account-activity-item">
+                                    <span class="activity-item-label">Clases registradas</span>
+                                    <span class="activity-item-value" id="statClassCount">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -292,10 +375,73 @@
         <section id="section-configuracion" class="dashboard-section">
             <div class="config-container">
                 <h2><i class="fas fa-gear"></i> Configuración</h2>
+
+                <h3 class="config-subheading"><i class="fas fa-palette"></i> Apariencia</h3>
+                <div class="config-grid">
+                    <div class="config-card">
+                        <h3><i class="fas fa-circle-half-stroke"></i> Tema</h3>
+                        <p>Elige cómo se ve la aplicación</p>
+                        <div class="theme-options" id="themeOptions">
+                            <button class="theme-option" data-tema="claro" type="button"><i class="fas fa-sun"></i> Claro</button>
+                            <button class="theme-option" data-tema="oscuro" type="button"><i class="fas fa-moon"></i> Oscuro</button>
+                            <button class="theme-option" data-tema="sistema" type="button"><i class="fas fa-display"></i> Sistema</button>
+                        </div>
+                    </div>
+                    <div class="config-card">
+                        <h3><i class="fas fa-fill-drip"></i> Color de acento</h3>
+                        <p>Personaliza el color principal de tu cuenta</p>
+                        <div class="accent-options" id="accentOptions">
+                            <button class="accent-swatch" data-accent="#1a2332" style="background:#1a2332;" type="button" aria-label="Azul oscuro"></button>
+                            <button class="accent-swatch" data-accent="#0d6efd" style="background:#0d6efd;" type="button" aria-label="Azul"></button>
+                            <button class="accent-swatch" data-accent="#7b2cbf" style="background:#7b2cbf;" type="button" aria-label="Morado"></button>
+                            <button class="accent-swatch" data-accent="#d81b60" style="background:#d81b60;" type="button" aria-label="Rosa"></button>
+                            <button class="accent-swatch" data-accent="#2e7d32" style="background:#2e7d32;" type="button" aria-label="Verde"></button>
+                            <button class="accent-swatch" data-accent="#e65100" style="background:#e65100;" type="button" aria-label="Naranja"></button>
+                        </div>
+                    </div>
+                    <div class="config-card">
+                        <h3><i class="fas fa-image"></i> Fondo</h3>
+                        <p>Cambia el fondo general de la app</p>
+                        <div class="bg-options" id="bgOptions">
+                            <button class="bg-swatch" data-bg="default" style="background:linear-gradient(135deg,#f5f7fa,#e8ecf1);" type="button" aria-label="Predeterminado"></button>
+                            <button class="bg-swatch" data-bg="azul" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);" type="button" aria-label="Azul suave"></button>
+                            <button class="bg-swatch" data-bg="calido" style="background:linear-gradient(135deg,#fff8e1,#ffe0b2);" type="button" aria-label="Cálido"></button>
+                            <button class="bg-swatch" data-bg="verde" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);" type="button" aria-label="Verde suave"></button>
+                            <button class="bg-swatch" data-bg="oscuro" style="background:linear-gradient(135deg,#0f151f,#1a2332);" type="button" aria-label="Oscuro"></button>
+                        </div>
+                    </div>
+                </div>
+
+                <h3 class="config-subheading"><i class="fas fa-shield-halved"></i> Cuenta</h3>
                 <div class="config-grid">
                     <div class="config-card"><h3><i class="fas fa-user-shield"></i> Seguridad</h3><p>Gestiona la seguridad de tu cuenta</p><button class="btn btn-secondary" id="changePasswordBtn">Cambiar contraseña</button></div>
                     <div class="config-card"><h3><i class="fas fa-bell"></i> Notificaciones</h3><p>Configura tus preferencias de notificación</p><button class="btn btn-secondary" id="manageNotifBtn">Gestionar</button></div>
                     <div class="config-card"><h3><i class="fas fa-database"></i> Datos</h3><p>Exporta o elimina tus datos</p><button class="btn btn-secondary" id="exportDataBtn">Exportar datos</button></div>
+                </div>
+
+                <h3 class="config-subheading"><i class="fas fa-robot"></i> Inteligencia Artificial</h3>
+                <div class="config-grid">
+                    <div class="config-card">
+                        <h3><i class="fas fa-gauge-high"></i> Uso diario</h3>
+                        <p>Mensajes disponibles hoy con el asistente</p>
+                        <div class="ai-usage-bar-wrap">
+                            <div class="ai-usage-bar"><div class="ai-usage-bar-fill" id="aiUsageBarFill"></div></div>
+                            <span id="aiUsageText">0 / 5 mensajes usados hoy</span>
+                        </div>
+                    </div>
+                    <div class="config-card">
+                        <h3><i class="fas fa-star"></i> Premium</h3>
+                        <p>Próximamente: mensajes ilimitados con la IA y funciones extra.</p>
+                        <button class="btn btn-secondary" disabled>Muy pronto</button>
+                    </div>
+                </div>
+
+                <h3 class="config-subheading"><i class="fas fa-sliders"></i> Más opciones</h3>
+                <div class="config-grid" id="configExtraGrid">
+                    <div class="config-card config-card-placeholder">
+                        <h3><i class="fas fa-plus"></i> Próximamente</h3>
+                        <p>Aquí irán nuevas configuraciones a medida que se agreguen.</p>
+                    </div>
                 </div>
             </div>
         </section>

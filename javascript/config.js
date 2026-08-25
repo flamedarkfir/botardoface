@@ -26,12 +26,83 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let onlineUidsSet = new Set();
     let contactEmojis = {};
     let attachedChatListeners = new Set();
-    let userStats = { loginCount: 0, exportCount: 0, aiMessages: 0 };
+    let userStats = { loginCount: 0, exportCount: 0, aiMessages: 0, aiChats: 0, lastLogin: null };
+    let apariencia = { tema: 'claro', acento: '#1a2332', fondo: 'default' };
+    let aiChatsList = [];
+    let currentAiChatId = null;
+    let aiDailyUsage = { fecha: '', count: 0 };
+    const AI_DAILY_LIMIT = 5;
+    let viewingProfileUid = null;
+    let viewingProfileData = null;
+    let activeProfileTab = 'publicaciones';
+    let activeMessagesTab = 'conversaciones';
 
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, function(c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
+    }
+
+    function getTodayString() {
+        const d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function formatearFechaLarga(value) {
+        if (!value) return '--';
+        const fecha = new Date(value);
+        if (isNaN(fecha.getTime())) return String(value);
+        return fecha.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }) +
+            ' · ' + fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function simpleMarkdownToHtml(rawText) {
+        let text = escapeHtml(rawText);
+
+        text = text.replace(/```([\s\S]*?)```/g, function(_, code) {
+            return '<pre class="md-code-block"><code>' + code.trim() + '</code></pre>';
+        });
+        text = text.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+
+        text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+        text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+        text = text.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+        text = text.replace(/(^|[^_])_([^_\n]+)_([^_]|$)/g, '$1<em>$2</em>$3');
+
+        const lines = text.split('\n');
+        let html = '';
+        let inUl = false;
+        let inOl = false;
+
+        function closeLists() {
+            if (inUl) { html += '</ul>'; inUl = false; }
+            if (inOl) { html += '</ol>'; inOl = false; }
+        }
+
+        lines.forEach(function(line) {
+            const trimmed = line.trim();
+            const bulletMatch = /^[-*]\s+(.*)$/.exec(trimmed);
+            const numberMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
+
+            if (bulletMatch) {
+                if (inOl) { html += '</ol>'; inOl = false; }
+                if (!inUl) { html += '<ul class="md-list">'; inUl = true; }
+                html += '<li>' + bulletMatch[1] + '</li>';
+            } else if (numberMatch) {
+                if (inUl) { html += '</ul>'; inUl = false; }
+                if (!inOl) { html += '<ol class="md-list">'; inOl = true; }
+                html += '<li>' + numberMatch[1] + '</li>';
+            } else if (trimmed === '') {
+                closeLists();
+                html += '<br>';
+            } else {
+                closeLists();
+                html += '<p class="md-p">' + line + '</p>';
+            }
+        });
+        closeLists();
+        return html;
     }
 
     function formatearTiempoRelativo(timestamp) {
@@ -216,6 +287,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     function actualizarStats() {
+        let amigos = 0;
+        followingSet.forEach(function(uid) {
+            if (followersSet.has(uid)) amigos++;
+        });
+        const statFriendCountEl = document.getElementById('statFriendCount');
+        if (statFriendCountEl) statFriendCountEl.textContent = amigos;
+
+        if (viewingProfileUid) return;
+
         const postCountEl = document.getElementById('postCount');
         if (postCountEl) postCountEl.textContent = posts.length;
         const classCountEl = document.getElementById('classCount');
@@ -227,14 +307,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const followingCountEl = document.getElementById('followingCountStat');
         if (followingCountEl) followingCountEl.textContent = followingSet.size;
 
-        let amigos = 0;
-        followingSet.forEach(function(uid) {
-            if (followersSet.has(uid)) amigos++;
-        });
         const friendCountEl = document.getElementById('friendCount');
         if (friendCountEl) friendCountEl.textContent = amigos;
-        const statFriendCountEl = document.getElementById('statFriendCount');
-        if (statFriendCountEl) statFriendCountEl.textContent = amigos;
     }
 
     function renderUserStats() {
@@ -244,6 +318,21 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         if (exportEl) exportEl.textContent = userStats.exportCount;
         const aiEl = document.getElementById('statAiMessages');
         if (aiEl) aiEl.textContent = userStats.aiMessages;
+        const aiChatsEl = document.getElementById('statAiChats');
+        if (aiChatsEl) aiChatsEl.textContent = aiChatsList.length;
+        const postCountEl2 = document.getElementById('statPostCount');
+        if (postCountEl2) postCountEl2.textContent = posts.length;
+        const classCountEl2 = document.getElementById('statClassCount');
+        if (classCountEl2) classCountEl2.textContent = clases.length;
+
+        const createdEl = document.getElementById('statCreatedAt');
+        if (createdEl) createdEl.textContent = formatearFechaLarga(currentUserData && currentUserData.createdAt);
+        const lastLoginEl = document.getElementById('statLastLogin');
+        if (lastLoginEl) lastLoginEl.textContent = userStats.lastLogin ? formatearFechaLarga(userStats.lastLogin) : 'Esta es tu primera vez';
+        const planEl = document.getElementById('statPlan');
+        if (planEl) planEl.textContent = (currentUserData && currentUserData.premium) ? 'Premium' : 'Gratis';
+
+        renderAiUsageBar();
     }
 
     async function cargarUserStats() {
@@ -255,6 +344,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 userStats.loginCount = val.loginCount || 0;
                 userStats.exportCount = val.exportCount || 0;
                 userStats.aiMessages = val.aiMessages || 0;
+                userStats.lastLogin = val.lastLogin || null;
+            }
+            const usageSnap = await get(ref(rtdb, 'users/' + currentUser.uid + '/stats/aiUsageDiario'));
+            if (usageSnap.exists()) {
+                const uval = usageSnap.val();
+                aiDailyUsage = { fecha: uval.fecha || '', count: uval.count || 0 };
+                if (aiDailyUsage.fecha !== getTodayString()) aiDailyUsage = { fecha: getTodayString(), count: 0 };
+            } else {
+                aiDailyUsage = { fecha: getTodayString(), count: 0 };
             }
         } catch (err) {
             console.error('Error cargando estadísticas:', err);
@@ -265,11 +363,53 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     async function registrarEntrada() {
         if (!currentUser) return;
         try {
+            const previousLastLogin = userStats.lastLogin;
             userStats.loginCount += 1;
-            await set(ref(rtdb, 'users/' + currentUser.uid + '/stats/loginCount'), userStats.loginCount);
+            const now = new Date().toISOString();
+            await update(ref(rtdb, 'users/' + currentUser.uid + '/stats'), {
+                loginCount: userStats.loginCount,
+                lastLogin: now
+            });
+            userStats.lastLogin = previousLastLogin;
             renderUserStats();
         } catch (err) {
             console.error('Error registrando entrada:', err);
+        }
+    }
+
+    function renderAiUsageBar() {
+        const fill = document.getElementById('aiUsageBarFill');
+        const text = document.getElementById('aiUsageText');
+        const esPremium = !!(currentUserData && currentUserData.premium);
+        if (esPremium) {
+            if (fill) fill.style.width = '100%';
+            if (text) text.textContent = 'Premium: mensajes ilimitados';
+            return;
+        }
+        const usados = (aiDailyUsage.fecha === getTodayString()) ? aiDailyUsage.count : 0;
+        const pct = Math.min(100, Math.round((usados / AI_DAILY_LIMIT) * 100));
+        if (fill) fill.style.width = pct + '%';
+        if (text) text.textContent = usados + ' / ' + AI_DAILY_LIMIT + ' mensajes usados hoy';
+    }
+
+    function puedeEnviarMensajeIA() {
+        if (currentUserData && currentUserData.premium) return true;
+        if (aiDailyUsage.fecha !== getTodayString()) {
+            aiDailyUsage = { fecha: getTodayString(), count: 0 };
+        }
+        return aiDailyUsage.count < AI_DAILY_LIMIT;
+    }
+
+    async function registrarUsoDiarioIA() {
+        if (aiDailyUsage.fecha !== getTodayString()) {
+            aiDailyUsage = { fecha: getTodayString(), count: 0 };
+        }
+        aiDailyUsage.count += 1;
+        renderAiUsageBar();
+        try {
+            await set(ref(rtdb, 'users/' + currentUser.uid + '/stats/aiUsageDiario'), aiDailyUsage);
+        } catch (err) {
+            console.error('Error guardando uso diario de IA:', err);
         }
     }
 
@@ -296,33 +436,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     function renderizarPosts() {
-        const grid = document.getElementById('postsGrid');
-        if (!grid) return;
-
-        if (posts.length === 0) {
-            grid.innerHTML = `
-                <div class="empty-posts">
-                    <i class="fas fa-pen-fancy"></i>
-                    <p>No tienes notas aún</p>
-                    <p style="font-size:0.8rem;">Comparte tus pensamientos o apuntes</p>
-                </div>
-            `;
-            return;
-        }
-
-        grid.innerHTML = posts.map(post => `
-            <div class="post-card">
-                <div class="post-header">
-                    <span class="post-date">${post.fecha}</span>
-                    <div class="post-actions">
-                        <button class="btn-delete-post" onclick="eliminarPost('${post.id}')">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="post-content">${post.texto}</div>
-            </div>
-        `).join('');
+        if (viewingProfileUid) return;
+        renderPostsGridGeneric(posts, true);
     }
 
     function actualizarBio() {
@@ -425,28 +540,18 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     function initPerfil() {
-        const editBioBtn = document.getElementById('editBioBtn');
         const bioEdit = document.getElementById('bioEdit');
         const bioTextEl = document.getElementById('profileBio');
         const cancelBioBtn = document.getElementById('cancelBioBtn');
         const saveBioBtn = document.getElementById('saveBioBtn');
         const bioTextarea = document.getElementById('bioTextarea');
-        const addPostBtn = document.getElementById('addPostBtn');
-
-        if (editBioBtn) {
-            editBioBtn.addEventListener('click', function() {
-                bioEdit.style.display = 'block';
-                bioTextEl.style.display = 'none';
-                this.style.display = 'none';
-                bioTextarea.focus();
-            });
-        }
 
         if (cancelBioBtn) {
             cancelBioBtn.addEventListener('click', function() {
                 bioEdit.style.display = 'none';
                 bioTextEl.style.display = 'block';
-                editBioBtn.style.display = 'inline-block';
+                const editBioBtn = document.getElementById('editBioBtn');
+                if (editBioBtn) editBioBtn.style.display = 'inline-flex';
                 bioTextarea.value = bioText;
             });
         }
@@ -463,22 +568,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 actualizarBio();
                 bioEdit.style.display = 'none';
                 bioTextEl.style.display = 'block';
-                editBioBtn.style.display = 'inline-block';
-            });
-        }
-
-        if (addPostBtn) {
-            addPostBtn.addEventListener('click', function() {
-                const texto = prompt('Escribe tu nota:');
-                if (texto && texto.trim()) {
-                    agregarPost(texto.trim());
-                }
+                const editBioBtn = document.getElementById('editBioBtn');
+                if (editBioBtn) editBioBtn.style.display = 'inline-flex';
             });
         }
 
         const emojiEl = document.getElementById('statusEmoji');
         if (emojiEl) {
             emojiEl.addEventListener('click', function() {
+                if (viewingProfileUid) return;
                 const emojis = ['😊', '😎', '🤓', '🔥', '💪', '🌟', '🚀', '💡', '🎯', '✨', '😄', '🤩', '👨‍💻', '👩‍💻', '🧠'];
                 const current = emojis.indexOf(statusEmoji);
                 const next = (current + 1) % emojis.length;
@@ -488,7 +586,21 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             });
         }
 
-        cargarPerfilSocial();
+        wireProfileTabs();
+        renderProfileActionsOwn();
+
+        const headerUserBtn = document.getElementById('headerUserBtn');
+        if (headerUserBtn && !headerUserBtn._wired) {
+            headerUserBtn._wired = true;
+            headerUserBtn.addEventListener('click', function() {
+                navigateTo('section-perfil');
+                mostrarPerfilPropio();
+            });
+        }
+
+        cargarPerfilSocial().then(function() {
+            mostrarPerfilPropio();
+        });
     }
 
     function esRecreo(clase) {
@@ -1203,33 +1315,18 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     function buildSocialUI() {
-        if (document.getElementById('socialSearchCard')) return;
-        const profileBody = document.querySelector('.profile-body') || document.querySelector('#section-perfil .profile-container') || document.getElementById('section-perfil');
-        if (!profileBody) return;
-        const html = `
-            <div class="profile-bio" id="socialSearchCard">
-                <div class="bio-header"><i class="fas fa-user-plus"></i><h3>Buscar usuarios</h3></div>
-                <div class="user-search-row">
-                    <input type="text" id="userSearchInput" placeholder="Buscar por nombre de usuario..." />
-                    <button class="btn btn-primary btn-sm" id="userSearchBtn"><i class="fas fa-search"></i></button>
-                </div>
-                <div id="userSearchResults"></div>
-            </div>
-            <div class="profile-bio" id="followingCard">
-                <div class="bio-header"><i class="fas fa-users"></i><h3>Siguiendo</h3></div>
-                <div id="followingList"><p class="social-empty">Aún no sigues a nadie.</p></div>
-            </div>
-            <div class="profile-bio" id="followersCard">
-                <div class="bio-header"><i class="fas fa-user-friends"></i><h3>Te siguen</h3></div>
-                <div id="followersListEl"><p class="social-empty">Nadie te sigue todavía.</p></div>
-            </div>
-        `;
-        profileBody.insertAdjacentHTML('beforeend', html);
-
-        document.getElementById('userSearchBtn').addEventListener('click', handleUserSearch);
-        document.getElementById('userSearchInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') { e.preventDefault(); handleUserSearch(); }
-        });
+        const searchBtn = document.getElementById('userSearchBtn');
+        const searchInput = document.getElementById('userSearchInput');
+        if (searchBtn && !searchBtn._wired) {
+            searchBtn._wired = true;
+            searchBtn.addEventListener('click', handleUserSearch);
+        }
+        if (searchInput && !searchInput._wired) {
+            searchInput._wired = true;
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); handleUserSearch(); }
+            });
+        }
     }
 
     function escapeForAttr(text) {
@@ -1244,9 +1341,17 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             return;
         }
         container.innerHTML = list.map(function(u) {
+            const meSigue = followersSet.has(u.uid);
+            const estadoBadge = meSigue
+                ? '<span class="social-status-badge amigos"><i class="fas fa-user-group"></i> Amigos</span>'
+                : '<span class="social-status-badge">No te sigue</span>';
             return `
                 <div class="social-list-item">
-                    <div><span class="social-list-name">${u.name}</span><div class="social-list-username">@${u.username}</div></div>
+                    <div class="social-list-identity">
+                        <span class="social-list-name">${u.name}</span>
+                        <div class="social-list-username">@${u.username}</div>
+                        ${estadoBadge}
+                    </div>
                     <div class="social-list-actions">
                         <button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Ver perfil</button>
                         <button class="btn btn-secondary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Dejar de seguir</button>
@@ -1265,10 +1370,44 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
         container.innerHTML = list.map(function(u) {
             const yaLoSigo = followingSet.has(u.uid);
+            const estadoBadge = yaLoSigo
+                ? '<span class="social-status-badge amigos"><i class="fas fa-user-group"></i> Amigos</span>'
+                : '<span class="social-status-badge nuevo">Te sigue</span>';
             return `
                 <div class="social-list-item">
-                    <div><span class="social-list-name">${u.name}</span><div class="social-list-username">@${u.username}</div></div>
-                    ${yaLoSigo ? '' : `<div class="social-list-actions"><button class="btn btn-primary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Seguir de vuelta</button></div>`}
+                    <div class="social-list-identity">
+                        <span class="social-list-name">${u.name}</span>
+                        <div class="social-list-username">@${u.username}</div>
+                        ${estadoBadge}
+                    </div>
+                    <div class="social-list-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Ver perfil</button>
+                        ${yaLoSigo ? '' : `<button class="btn btn-primary btn-sm" onclick="toggleFollow('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Seguir de vuelta</button>`}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderFriendsList() {
+        const container = document.getElementById('friendsListEl');
+        if (!container) return;
+        const amigos = followingList.filter(function(u) { return followersSet.has(u.uid); });
+        if (amigos.length === 0) {
+            container.innerHTML = '<p class="social-empty">Todavía no tienes amigos en común. Un amigo es alguien que te sigue y a quien también sigues.</p>';
+            return;
+        }
+        container.innerHTML = amigos.map(function(u) {
+            return `
+                <div class="social-list-item">
+                    <div class="social-list-identity">
+                        <span class="social-list-name">${u.name}</span>
+                        <div class="social-list-username">@${u.username}</div>
+                        <span class="social-status-badge amigos"><i class="fas fa-user-group"></i> Amigos</span>
+                    </div>
+                    <div class="social-list-actions">
+                        <button class="btn btn-secondary btn-sm" onclick="verPerfilUsuario('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">Ver perfil</button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -1289,6 +1428,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             }
             renderFollowingList(followingList);
             renderFollowersList(followersList);
+            renderFriendsList();
             actualizarStats();
             buildChatContacts();
         }, function(err) {
@@ -1318,6 +1458,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             followersCount = followersList.length;
             followersInitialized = true;
             renderFollowersList(followersList);
+            renderFriendsList();
             actualizarStats();
             buildChatContacts();
         }, function(err) {
@@ -1390,6 +1531,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             }
             renderFollowingList(followingList);
             renderFollowersList(followersList);
+            renderFriendsList();
             buildChatContacts();
             const term = document.getElementById('userSearchInput').value.trim().toLowerCase();
             if (term) handleUserSearch();
@@ -1819,115 +1961,539 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
     }
 
-    function buildUserProfileModal() {
-        if (document.getElementById('userProfileOverlay')) return;
-        const html = `
-            <div class="modal-overlay" id="userProfileOverlay">
-                <div class="modal modal-wide">
-                    <div class="modal-header">
-                        <h3 id="userProfileModalTitle">Perfil</h3>
-                        <button class="modal-close" id="userProfileClose">&times;</button>
-                    </div>
-                    <div class="modal-body modal-body-scroll" id="userProfileModalBody">
-                        <p class="user-profile-empty">Cargando...</p>
+    function obtenerMateriasUnicas(clasesArr) {
+        const set = new Set();
+        (clasesArr || []).forEach(function(c) {
+            if (c.nombre && c.nombre.toLowerCase() !== 'recreo') set.add(c.nombre);
+        });
+        return Array.from(set);
+    }
+
+    function renderProfileMaterias(clasesArr) {
+        const container = document.getElementById('profileMateriasChips');
+        if (!container) return;
+        const materias = obtenerMateriasUnicas(clasesArr);
+        if (materias.length === 0) {
+            container.innerHTML = '<p class="social-empty">Sin materias registradas todavía.</p>';
+            return;
+        }
+        container.innerHTML = materias.map(function(m) {
+            return '<span class="materia-chip"><i class="fas fa-book"></i> ' + escapeHtml(m) + '</span>';
+        }).join('');
+    }
+
+    function renderProfileHorarioResumen(clasesArr) {
+        const container = document.getElementById('profileHorarioResumen');
+        if (!container) return;
+        if (!clasesArr || clasesArr.length === 0) {
+            container.innerHTML = '<p class="social-empty">Sin horario registrado todavía.</p>';
+            return;
+        }
+        const ordenDias = diasSemana;
+        const copia = clasesArr.slice().sort(function(a, b) {
+            const diaA = ordenDias.indexOf((a.dias && a.dias[0]) || '');
+            const diaB = ordenDias.indexOf((b.dias && b.dias[0]) || '');
+            if (diaA !== diaB) return diaA - diaB;
+            return (a.horaInicio || '').localeCompare(b.horaInicio || '');
+        });
+        container.innerHTML = copia.map(function(c) {
+            return `
+                <div class="profile-schedule-item">
+                    <i class="fas ${c.icono || 'fa-book'}" style="color:${c.colorText || 'var(--primary)'};"></i>
+                    <div class="profile-schedule-info">
+                        <span class="profile-schedule-name">${escapeHtml(c.nombre)}</span>
+                        <span class="profile-schedule-meta">${(c.dias || []).join(', ')} · ${c.horaInicio} - ${c.horaFin}</span>
                     </div>
                 </div>
-            </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', html);
-        document.getElementById('userProfileClose').addEventListener('click', function() {
-            document.getElementById('userProfileOverlay').classList.remove('open');
+            `;
+        }).join('');
+    }
+
+    function renderPostsGridGeneric(postsArr, soyPropietario) {
+        const grid = document.getElementById('postsGrid');
+        if (!grid) return;
+        if (!postsArr || postsArr.length === 0) {
+            grid.innerHTML = `
+                <div class="empty-posts">
+                    <i class="fas fa-pen-fancy"></i>
+                    <p>${soyPropietario ? 'No tienes notas aún' : 'Este usuario no tiene notas todavía'}</p>
+                    ${soyPropietario ? '<p style="font-size:0.8rem;">Comparte tus pensamientos o apuntes</p>' : ''}
+                </div>
+            `;
+            return;
+        }
+        grid.innerHTML = postsArr.map(function(post) {
+            return `
+                <div class="post-card">
+                    <div class="post-header">
+                        <span class="post-date">${post.fecha}</span>
+                        ${soyPropietario ? `<div class="post-actions"><button class="btn-delete-post" onclick="eliminarPost('${post.id}')"><i class="fas fa-trash"></i></button></div>` : ''}
+                    </div>
+                    <div class="post-content">${escapeHtml(post.texto)}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function switchProfileTab(tab) {
+        activeProfileTab = tab;
+        document.querySelectorAll('.profile-tab').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
         });
-        document.getElementById('userProfileOverlay').addEventListener('click', function(e) {
-            if (e.target === this) this.classList.remove('open');
+        document.querySelectorAll('.profile-stat-btn').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.tab === tab);
+        });
+        document.querySelectorAll('.profile-tab-panel').forEach(function(panel) {
+            panel.classList.toggle('active', panel.id === 'profilePanel-' + tab);
         });
     }
 
-    async function verPerfilUsuario(uid, name, username) {
+    function wireProfileTabs() {
+        document.querySelectorAll('.profile-tab, .profile-stat-btn').forEach(function(btn) {
+            if (btn._wired) return;
+            btn._wired = true;
+            btn.addEventListener('click', function() {
+                switchProfileTab(this.dataset.tab);
+            });
+        });
+        const backBtn = document.getElementById('profileBackBtn');
+        if (backBtn && !backBtn._wired) {
+            backBtn._wired = true;
+            backBtn.addEventListener('click', mostrarPerfilPropio);
+        }
+    }
+
+    function renderProfileActionsOwn() {
+        const actions = document.getElementById('profileActions');
+        if (!actions) return;
+        actions.innerHTML = `
+            <button class="btn btn-secondary btn-sm" id="editBioBtn"><i class="fas fa-pen"></i> Editar descripción</button>
+        `;
+        wireEditBioButton();
+    }
+
+    function renderProfileActionsViewing(uid, name, username) {
+        const actions = document.getElementById('profileActions');
+        if (!actions) return;
+        const isFollowing = followingSet.has(uid);
+        actions.innerHTML = `
+            <button class="btn ${isFollowing ? 'btn-secondary' : 'btn-primary'} btn-sm" id="profileFollowBtn">
+                ${isFollowing ? '<i class="fas fa-user-check"></i> Dejar de seguir' : '<i class="fas fa-user-plus"></i> Seguir'}
+            </button>
+            <button class="btn btn-secondary btn-sm" id="profileMessageBtn"><i class="fas fa-comment"></i> Mensaje</button>
+        `;
+        document.getElementById('profileFollowBtn').addEventListener('click', async function() {
+            await toggleFollow(uid, name, username);
+            renderProfileActionsViewing(uid, name, username);
+        });
+        document.getElementById('profileMessageBtn').addEventListener('click', function() {
+            navigateTo('section-mensajes');
+            switchMessagesTab('conversaciones');
+            abrirChat(uid, name, username);
+        });
+    }
+
+    function wireEditBioButton() {
+        const editBioBtn = document.getElementById('editBioBtn');
+        const bioEdit = document.getElementById('bioEdit');
+        const bioTextEl = document.getElementById('profileBio');
+        if (editBioBtn && !editBioBtn._wired) {
+            editBioBtn._wired = true;
+            editBioBtn.addEventListener('click', function() {
+                bioEdit.style.display = 'block';
+                bioTextEl.style.display = 'none';
+                this.style.display = 'none';
+                document.getElementById('bioTextarea').focus();
+            });
+        }
+    }
+
+    function mostrarPerfilPropio() {
+        viewingProfileUid = null;
+        viewingProfileData = null;
+
+        const backBtn = document.getElementById('profileBackBtn');
+        if (backBtn) backBtn.style.display = 'none';
+        const postsHeaderRow = document.getElementById('postsHeaderRow');
+        if (postsHeaderRow) {
+            postsHeaderRow.innerHTML = '<h3><i class="fas fa-newspaper"></i> Notas</h3><button class="btn btn-primary btn-sm" id="addPostBtn"><i class="fas fa-plus"></i> Nueva nota</button>';
+            wireAddPostButton();
+        }
+
+        loadUserData();
+        renderProfileActionsOwn();
+        actualizarBio();
+        actualizarEmoji();
+        renderPostsGridGeneric(posts, true);
+        renderProfileMaterias(clases);
+        renderProfileHorarioResumen(clases);
+        renderFollowingList(followingList);
+        renderFollowersList(followersList);
+        renderFriendsList();
+        actualizarStats();
+
+        const tabsRow = document.getElementById('profileTabs');
+        if (tabsRow) tabsRow.style.display = '';
+        const searchCard = document.getElementById('socialSearchCard');
+        if (searchCard) searchCard.style.display = '';
+
+        switchProfileTab('publicaciones');
+    }
+
+    function wireAddPostButton() {
+        const addPostBtn = document.getElementById('addPostBtn');
+        if (addPostBtn && !addPostBtn._wired) {
+            addPostBtn._wired = true;
+            addPostBtn.addEventListener('click', function() {
+                const texto = prompt('Escribe tu nota:');
+                if (texto && texto.trim()) agregarPost(texto.trim());
+            });
+        }
+    }
+
+    async function mostrarPerfilDeUsuario(uid, name, username) {
         if (!followingSet.has(uid)) {
             alert('Solo puedes ver el perfil de las cuentas que sigues.');
             return;
         }
 
-        buildUserProfileModal();
-        const overlay = document.getElementById('userProfileOverlay');
-        const title = document.getElementById('userProfileModalTitle');
-        const body = document.getElementById('userProfileModalBody');
-        title.textContent = name + ' (@' + username + ')';
-        body.innerHTML = '<p class="user-profile-empty">Cargando...</p>';
-        overlay.classList.add('open');
+        viewingProfileUid = uid;
+        viewingProfileData = { name: name, username: username };
+
+        const backBtn = document.getElementById('profileBackBtn');
+        if (backBtn) backBtn.style.display = 'inline-flex';
+
+        document.getElementById('profileName').textContent = name;
+        document.getElementById('profileUsername').textContent = '@' + username;
+        document.getElementById('profileBio').textContent = 'Cargando...';
+        renderProfileActionsViewing(uid, name, username);
+
+        const postsHeaderRow = document.getElementById('postsHeaderRow');
+        if (postsHeaderRow) postsHeaderRow.innerHTML = '<h3><i class="fas fa-newspaper"></i> Notas</h3>';
+
+        const tabsRow = document.getElementById('profileTabs');
+        if (tabsRow) tabsRow.style.display = '';
+        const searchCard = document.getElementById('socialSearchCard');
+        if (searchCard) searchCard.style.display = 'none';
+
+        switchProfileTab('publicaciones');
 
         try {
-            const [perfilSnap, postsSnap, clasesSnap] = await Promise.all([
+            const [perfilSnap, postsSnap, clasesSnap, followersSnap, followingSnap] = await Promise.all([
                 get(ref(rtdb, 'users/' + uid + '/perfil')),
                 get(ref(rtdb, 'users/' + uid + '/posts')),
-                get(ref(rtdb, 'users/' + uid + '/clases'))
+                get(ref(rtdb, 'users/' + uid + '/clases')),
+                get(ref(rtdb, 'users/' + uid + '/followers')),
+                get(ref(rtdb, 'users/' + uid + '/following'))
             ]);
 
+            if (viewingProfileUid !== uid) return;
+
             const perfil = perfilSnap.exists() ? perfilSnap.val() : {};
+            document.getElementById('profileBio').textContent = perfil.bio || 'Sin descripción.';
+            const emojiEl = document.getElementById('statusEmoji');
+            if (emojiEl) emojiEl.textContent = perfil.emoji || '😊';
+
             const postsArr = [];
             if (postsSnap.exists()) postsSnap.forEach(function(c) { postsArr.push(c.val()); });
             postsArr.sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+            renderPostsGridGeneric(postsArr, false);
+
             const clasesArr = [];
             if (clasesSnap.exists()) clasesSnap.forEach(function(c) { clasesArr.push(c.val()); });
+            renderProfileMaterias(clasesArr);
+            renderProfileHorarioResumen(clasesArr);
 
-            let html = '';
-            html += '<div class="user-profile-section">';
-            html += '<h4><i class="fas fa-pen"></i> Acerca de</h4>';
-            html += '<p class="user-profile-bio-text">' + (perfil.bio || 'Sin descripción.') + '</p>';
-            html += '</div>';
+            const otherFollowers = [];
+            if (followersSnap.exists()) followersSnap.forEach(function(c) { otherFollowers.push(Object.assign({ uid: c.key }, c.val())); });
+            const otherFollowing = [];
+            if (followingSnap.exists()) followingSnap.forEach(function(c) { otherFollowing.push(Object.assign({ uid: c.key }, c.val())); });
 
-            html += '<div class="user-profile-section">';
-            html += '<h4><i class="fas fa-calendar-alt"></i> Horario (' + clasesArr.length + ')</h4>';
-            if (clasesArr.length === 0) {
-                html += '<p class="user-profile-empty">Sin clases registradas.</p>';
-            } else {
-                clasesArr.forEach(function(c) {
-                    html += '<div class="user-profile-class-item">' + c.nombre + ' · ' + c.dias.join(', ') + ' · ' + c.horaInicio + '-' + c.horaFin + '</div>';
-                });
+            document.getElementById('followersCountStat').textContent = otherFollowers.length;
+            document.getElementById('followingCountStat').textContent = otherFollowing.length;
+            const otherFollowersSet = new Set(otherFollowers.map(function(u) { return u.uid; }));
+            const otherAmigos = otherFollowing.filter(function(u) { return otherFollowersSet.has(u.uid); });
+            document.getElementById('friendCount').textContent = otherAmigos.length;
+            document.getElementById('classCount').textContent = clasesArr.length;
+
+            const followersContainer = document.getElementById('followersListEl');
+            if (followersContainer) {
+                followersContainer.innerHTML = otherFollowers.length === 0
+                    ? '<p class="social-empty">Nadie sigue a este usuario todavía.</p>'
+                    : otherFollowers.map(function(u) {
+                        return `<div class="social-list-item"><div class="social-list-identity"><span class="social-list-name">${escapeHtml(u.name)}</span><div class="social-list-username">@${escapeHtml(u.username)}</div></div></div>`;
+                    }).join('');
             }
-            html += '</div>';
-
-            html += '<div class="user-profile-section">';
-            html += '<h4><i class="fas fa-newspaper"></i> Notas (' + postsArr.length + ')</h4>';
-            if (postsArr.length === 0) {
-                html += '<p class="user-profile-empty">Sin notas.</p>';
-            } else {
-                postsArr.forEach(function(p) {
-                    html += '<div class="user-profile-post-item"><div class="user-profile-post-date">' + p.fecha + '</div>' + p.texto + '</div>';
-                });
+            const followingContainer = document.getElementById('followingList');
+            if (followingContainer) {
+                followingContainer.innerHTML = otherFollowing.length === 0
+                    ? '<p class="social-empty">Este usuario no sigue a nadie todavía.</p>'
+                    : otherFollowing.map(function(u) {
+                        return `<div class="social-list-item"><div class="social-list-identity"><span class="social-list-name">${escapeHtml(u.name)}</span><div class="social-list-username">@${escapeHtml(u.username)}</div></div></div>`;
+                    }).join('');
             }
-            html += '</div>';
-
-            body.innerHTML = html;
+            const friendsContainer = document.getElementById('friendsListEl');
+            if (friendsContainer) {
+                friendsContainer.innerHTML = otherAmigos.length === 0
+                    ? '<p class="social-empty">Sin amigos en común visibles.</p>'
+                    : otherAmigos.map(function(u) {
+                        return `<div class="social-list-item"><div class="social-list-identity"><span class="social-list-name">${escapeHtml(u.name)}</span><div class="social-list-username">@${escapeHtml(u.username)}</div></div></div>`;
+                    }).join('');
+            }
         } catch (err) {
             console.error('Error cargando perfil de usuario:', err);
-            body.innerHTML = '<p class="social-error" style="text-align:center;">No se pudo cargar el perfil: ' + (err.code || err.message) + '</p>';
+            document.getElementById('profileBio').textContent = 'No se pudo cargar este perfil.';
         }
+    }
+
+    function verPerfilUsuario(uid, name, username) {
+        navigateTo('section-perfil');
+        mostrarPerfilDeUsuario(uid, name, username);
     }
 
     window.verPerfilUsuario = verPerfilUsuario;
 
-    function appendAssistantMessage(role, text) {
+    const ASSISTANT_SYSTEM_INSTRUCTION = `Eres "Botardo", el asistente virtual dentro del dashboard de Botardo Face App, una aplicación educativa de reconocimiento facial creada por estudiantes del Colegio Luis Madina (Colombia) para el taller de Sistemas Informáticos.
+
+CONOCIMIENTO DE LA APLICACIÓN (úsalo para responder con precisión):
+- Secciones del panel lateral: Panel (resumen y actividad reciente), Perfil (perfil propio y de otros usuarios, con notas, horario, materias, seguidores, seguidos y amigos), Mensajes (pestaña "Conversaciones" para chatear con otras personas, y pestaña "IA" con el historial de chats contigo), Horario (crear y editar el horario de clases semanal), Cámara (demo de reconocimiento facial), Estadísticas (datos de uso de la cuenta), Configuración (seguridad, notificaciones, apariencia, datos, uso de IA) y Proyectos (proyectos propios de Botardo).
+- Perfil: cada usuario tiene nombre, nombre de usuario, descripción (bio), un emoji de estado, notas/publicaciones, horario de clases, materias, seguidores y seguidos. Dos usuarios son "amigos" cuando se siguen mutuamente.
+- Mensajería: solo puedes escribirle a alguien si esa persona te sigue a ti.
+- Tienes un límite de 5 mensajes diarios contigo (la IA) para cuentas gratuitas; los usuarios Premium (función futura) no tendrán límite.
+- Responde siempre en español, de forma breve, cálida y clara. Puedes usar formato Markdown (negrita con **, listas con -, etc.) cuando ayude a la claridad.
+
+NAVEGACIÓN: si el usuario te pide ir a una sección de la app (por ejemplo "llévame a mi perfil", "abre configuración", "muéstrame mis mensajes"), responde brevemente confirmando la acción y termina tu respuesta agregando en una línea aparte, exactamente, una de estas marcas según corresponda:
+[[NAV:section-panel]] para Panel
+[[NAV:section-perfil]] para Perfil
+[[NAV:section-mensajes]] para Mensajes
+[[NAV:section-clases]] para Horario
+[[NAV:section-camara]] para Cámara
+[[NAV:section-estadisticas]] para Estadísticas
+[[NAV:section-configuracion]] para Configuración
+[[NAV:section-proyectos]] para Proyectos
+No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
+
+    function appendAssistantMessage(role, text, opts) {
         const container = document.getElementById('assistantMessages');
         if (!container) return;
         const bubble = document.createElement('div');
         bubble.className = 'assistant-message ' + (role === 'user' ? 'mine' : 'theirs');
-        bubble.textContent = text;
+        if (role === 'user') {
+            bubble.textContent = text;
+        } else {
+            bubble.innerHTML = simpleMarkdownToHtml(text);
+        }
         container.appendChild(bubble);
-        container.scrollTop = container.scrollHeight;
+        if (!opts || opts.scroll !== false) container.scrollTop = container.scrollHeight;
+        return bubble;
+    }
+
+    function extraerNavegacion(texto) {
+        const match = /\[\[NAV:([a-z0-9\-]+)\]\]/i.exec(texto);
+        if (!match) return { texto: texto, target: null };
+        const limpio = texto.replace(match[0], '').trim();
+        return { texto: limpio, target: match[1] };
     }
 
     let assistantChat = null;
+    let assistantChatForId = null;
 
-    function getAssistantChat() {
-        if (assistantChat) return assistantChat;
-        const model = getGenerativeModel(ai, {
+    function crearModeloIA() {
+        return getGenerativeModel(ai, {
             model: 'gemini-3.6-flash',
-            systemInstruction: 'Eres el asistente virtual del dashboard de Botardo Face App, una app educativa de reconocimiento facial hecha por estudiantes de colegio. Ayudas al usuario con dudas sobre su horario de clases, sus notas, su perfil, seguir a otros usuarios y el funcionamiento general de la app. Responde siempre en español, de forma breve, amigable y clara.'
+            systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION
         });
-        assistantChat = model.startChat();
+    }
+
+    function getAssistantChat(historyMsgs) {
+        if (assistantChat && assistantChatForId === currentAiChatId) return assistantChat;
+        const model = crearModeloIA();
+        const history = (historyMsgs || []).map(function(m) {
+            return { role: m.role === 'user' ? 'user' : 'model', parts: [{ text: m.text }] };
+        });
+        assistantChat = model.startChat({ history: history });
+        assistantChatForId = currentAiChatId;
         return assistantChat;
+    }
+
+    function aiChatsRtdbPath() {
+        return 'users/' + currentUser.uid + '/aiChats';
+    }
+
+    async function cargarChatsIA() {
+        if (!currentUser) return [];
+        try {
+            const snap = await get(ref(rtdb, aiChatsRtdbPath()));
+            const lista = [];
+            if (snap.exists()) {
+                snap.forEach(function(child) {
+                    const val = child.val();
+                    lista.push({ id: child.key, titulo: val.titulo || 'Nueva conversación', updatedAt: val.updatedAt || 0, createdAt: val.createdAt || 0 });
+                });
+            }
+            lista.sort(function(a, b) { return b.updatedAt - a.updatedAt; });
+            aiChatsList = lista;
+            return lista;
+        } catch (err) {
+            console.error('Error cargando chats de IA:', err);
+            return [];
+        }
+    }
+
+    async function crearNuevoChatIA() {
+        const newRef = push(ref(rtdb, aiChatsRtdbPath()));
+        const now = Date.now();
+        await set(newRef, { titulo: 'Nueva conversación', createdAt: now, updatedAt: now });
+        currentAiChatId = newRef.key;
+        assistantChat = null;
+        const container = document.getElementById('assistantMessages');
+        if (container) container.innerHTML = '';
+        appendAssistantMessage('assistant', '¡Hola! Soy el asistente de Botardo Face. Puedo ayudarte con tu horario, tus notas, tu perfil, o llevarte a cualquier sección de la app. ¿En qué te ayudo?');
+        await cargarChatsIA();
+        renderAiChatsListMessages();
+        renderAiChatsDropdown();
+        renderUserStats();
+        return currentAiChatId;
+    }
+
+    async function guardarMensajeIA(chatId, role, text) {
+        try {
+            const msgRef = push(ref(rtdb, aiChatsRtdbPath() + '/' + chatId + '/messages'));
+            await set(msgRef, { role: role, text: text, createdAt: Date.now() });
+            const updates = { updatedAt: Date.now() };
+            const chatMeta = aiChatsList.find(function(c) { return c.id === chatId; });
+            if (role === 'user' && (!chatMeta || chatMeta.titulo === 'Nueva conversación')) {
+                updates.titulo = text.length > 40 ? text.slice(0, 40) + '…' : text;
+            }
+            await update(ref(rtdb, aiChatsRtdbPath() + '/' + chatId), updates);
+        } catch (err) {
+            console.error('Error guardando mensaje de IA:', err);
+        }
+    }
+
+    async function cargarMensajesChatIA(chatId) {
+        try {
+            const snap = await get(ref(rtdb, aiChatsRtdbPath() + '/' + chatId + '/messages'));
+            const mensajes = [];
+            if (snap.exists()) {
+                snap.forEach(function(child) {
+                    const val = child.val();
+                    mensajes.push({ id: child.key, role: val.role, text: val.text, createdAt: val.createdAt || 0 });
+                });
+            }
+            mensajes.sort(function(a, b) { return a.createdAt - b.createdAt; });
+            return mensajes;
+        } catch (err) {
+            console.error('Error cargando mensajes de IA:', err);
+            return [];
+        }
+    }
+
+    async function abrirChatIA(chatId) {
+        currentAiChatId = chatId;
+        assistantChat = null;
+        const container = document.getElementById('assistantMessages');
+        if (container) container.innerHTML = '<p class="assistant-loading">Cargando conversación...</p>';
+        const mensajes = await cargarMensajesChatIA(chatId);
+        if (container) container.innerHTML = '';
+        if (mensajes.length === 0) {
+            appendAssistantMessage('assistant', '¡Hola! Soy el asistente de Botardo Face. ¿En qué te ayudo?');
+        } else {
+            mensajes.forEach(function(m) {
+                appendAssistantMessage(m.role === 'user' ? 'user' : 'assistant', m.text, { scroll: false });
+            });
+            if (container) container.scrollTop = container.scrollHeight;
+        }
+        getAssistantChat(mensajes);
+        renderAiChatsDropdown();
+        const panel = document.getElementById('assistantPanel');
+        if (panel) panel.classList.remove('history-open');
+    }
+
+    function renderAiChatsDropdown() {
+        const list = document.getElementById('assistantHistoryList');
+        if (!list) return;
+        if (aiChatsList.length === 0) {
+            list.innerHTML = '<p class="social-empty">Sin conversaciones todavía.</p>';
+            return;
+        }
+        list.innerHTML = aiChatsList.map(function(c) {
+            const activeClass = c.id === currentAiChatId ? ' active' : '';
+            return `
+                <button class="assistant-history-item${activeClass}" data-chat-id="${c.id}">
+                    <i class="fas fa-message"></i>
+                    <span>${escapeHtml(c.titulo)}</span>
+                </button>
+            `;
+        }).join('');
+        list.querySelectorAll('.assistant-history-item').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                abrirChatIA(this.dataset.chatId);
+            });
+        });
+    }
+
+    function renderAiChatsListMessages() {
+        const list = document.getElementById('aiChatsListMessages');
+        if (!list) return;
+        if (aiChatsList.length === 0) {
+            list.innerHTML = '<p class="social-empty">Aún no has hablado con la IA. Inicia una conversación nueva.</p>';
+            return;
+        }
+        list.innerHTML = aiChatsList.map(function(c) {
+            return `
+                <div class="chat-contact-item" data-chat-id="${c.id}">
+                    <div class="chat-contact-avatar-wrap">
+                        <div class="chat-contact-avatar"><i class="fas fa-robot"></i></div>
+                    </div>
+                    <div class="chat-contact-info">
+                        <div class="chat-contact-name">${escapeHtml(c.titulo)}</div>
+                        <div class="chat-contact-meta">${formatearTiempoRelativo(c.updatedAt)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        list.querySelectorAll('.chat-contact-item').forEach(function(item) {
+            item.addEventListener('click', function() {
+                abrirAsistentePanel();
+                abrirChatIA(this.dataset.chatId);
+            });
+        });
+    }
+
+    function abrirAsistentePanel() {
+        const panel = document.getElementById('assistantPanel');
+        if (panel) panel.style.display = 'flex';
+    }
+
+    function switchMessagesTab(tab) {
+        activeMessagesTab = tab;
+        document.querySelectorAll('.messages-top-tab').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.mtab === tab);
+        });
+        const conv = document.getElementById('messagesContainer');
+        const iaBox = document.getElementById('messagesIaContainer');
+        if (conv) conv.style.display = tab === 'conversaciones' ? 'flex' : 'none';
+        if (iaBox) iaBox.style.display = tab === 'ia' ? 'flex' : 'none';
+        if (tab === 'ia') {
+            cargarChatsIA().then(renderAiChatsListMessages);
+        }
+    }
+
+    function initMessagesTabs() {
+        document.querySelectorAll('.messages-top-tab').forEach(function(btn) {
+            if (btn._wired) return;
+            btn._wired = true;
+            btn.addEventListener('click', function() { switchMessagesTab(this.dataset.mtab); });
+        });
+        const newChatBtn = document.getElementById('newAiChatFromMessagesBtn');
+        if (newChatBtn && !newChatBtn._wired) {
+            newChatBtn._wired = true;
+            newChatBtn.addEventListener('click', async function() {
+                abrirAsistentePanel();
+                await crearNuevoChatIA();
+            });
+        }
     }
 
     async function sendAssistantMessage() {
@@ -1936,10 +2502,21 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const text = input.value.trim();
         if (!text) return;
 
+        if (!puedeEnviarMensajeIA()) {
+            appendAssistantMessage('assistant', 'Has alcanzado tu límite de **5 mensajes** por hoy con la IA. Vuelve mañana, o espera la función **Premium** para mensajes ilimitados. 🌟');
+            return;
+        }
+
+        if (!currentAiChatId) {
+            await crearNuevoChatIA();
+        }
+
         appendAssistantMessage('user', text);
         input.value = '';
         sendBtn.disabled = true;
         incrementarStatAiMessage();
+        registrarUsoDiarioIA();
+        guardarMensajeIA(currentAiChatId, 'user', text);
 
         const container = document.getElementById('assistantMessages');
         const typingBubble = document.createElement('div');
@@ -1952,10 +2529,23 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         try {
             const chat = getAssistantChat();
             const result = await chat.sendMessage(text);
-            const responseText = result.response.text();
+            let responseText = result.response.text();
             const typing = document.getElementById('assistantTyping');
             if (typing) typing.remove();
-            appendAssistantMessage('assistant', responseText);
+
+            const { texto, target } = extraerNavegacion(responseText);
+            appendAssistantMessage('assistant', texto);
+            guardarMensajeIA(currentAiChatId, 'assistant', texto);
+            cargarChatsIA().then(function() {
+                renderAiChatsDropdown();
+                renderAiChatsListMessages();
+            });
+
+            if (target && document.getElementById(target)) {
+                navigateTo(target);
+                if (target === 'section-perfil') mostrarPerfilPropio();
+                if (target === 'section-mensajes') switchMessagesTab('conversaciones');
+            }
         } catch (err) {
             console.error('Error del asistente:', err);
             const typing = document.getElementById('assistantTyping');
@@ -1975,9 +2565,20 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             <div id="assistantPanel" class="assistant-panel">
                 <div class="assistant-panel-header">
                     <strong><i class="fas fa-robot"></i> Asistente Botardo</strong>
-                    <button id="assistantCloseBtn" class="assistant-close-btn">&times;</button>
+                    <div class="assistant-header-actions">
+                        <button id="assistantHistoryBtn" class="assistant-icon-btn" title="Historial"><i class="fas fa-clock-rotate-left"></i></button>
+                        <button id="assistantNewChatBtn" class="assistant-icon-btn" title="Nuevo chat"><i class="fas fa-plus"></i></button>
+                        <button id="assistantCloseBtn" class="assistant-close-btn">&times;</button>
+                    </div>
+                </div>
+                <div id="assistantHistoryPanel" class="assistant-history-panel">
+                    <div class="assistant-history-header">Tus conversaciones</div>
+                    <div id="assistantHistoryList" class="assistant-history-list"></div>
                 </div>
                 <div id="assistantMessages" class="assistant-messages"></div>
+                <div class="assistant-limit-banner" id="assistantLimitBanner" style="display:none;">
+                    Has usado tus 5 mensajes de hoy. Vuelve mañana o espera Premium.
+                </div>
                 <div class="assistant-input-row">
                     <input type="text" id="assistantInput" placeholder="Escribe tu pregunta..." />
                     <button id="assistantSendBtn" class="btn btn-primary btn-sm"><i class="fas fa-paper-plane"></i></button>
@@ -1986,9 +2587,19 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         `;
         document.body.insertAdjacentHTML('beforeend', html);
 
-        document.getElementById('assistantButton').addEventListener('click', function() {
+        document.getElementById('assistantButton').addEventListener('click', async function() {
             const panel = document.getElementById('assistantPanel');
-            panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
+            const abrir = panel.style.display !== 'flex';
+            panel.style.display = abrir ? 'flex' : 'none';
+            if (abrir && !currentAiChatId) {
+                await cargarChatsIA();
+                if (aiChatsList.length > 0) {
+                    await abrirChatIA(aiChatsList[0].id);
+                } else {
+                    await crearNuevoChatIA();
+                }
+                renderAiChatsDropdown();
+            }
         });
         document.getElementById('assistantCloseBtn').addEventListener('click', function() {
             document.getElementById('assistantPanel').style.display = 'none';
@@ -1997,8 +2608,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         document.getElementById('assistantInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') { e.preventDefault(); sendAssistantMessage(); }
         });
-
-        appendAssistantMessage('assistant', '¡Hola! Soy el asistente de Botardo Face. Puedo ayudarte con tu horario, tus notas o dudas sobre la app. ¿En qué te ayudo?');
+        document.getElementById('assistantHistoryBtn').addEventListener('click', function() {
+            document.getElementById('assistantPanel').classList.toggle('history-open');
+        });
+        document.getElementById('assistantNewChatBtn').addEventListener('click', async function() {
+            await crearNuevoChatIA();
+            document.getElementById('assistantPanel').classList.remove('history-open');
+        });
     }
 
     if (menuToggle) {
@@ -2023,6 +2639,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             e.preventDefault();
             const sectionId = this.dataset.section;
             navigateTo(`section-${sectionId}`);
+            if (sectionId === 'perfil') mostrarPerfilPropio();
+            if (sectionId === 'mensajes') switchMessagesTab('conversaciones');
         });
     });
 
@@ -2234,6 +2852,83 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     function closeProjectsInfoModal() {
         const overlay = document.getElementById('projectsInfoOverlay');
         if (overlay) overlay.classList.remove('open');
+    }
+
+    function aplicarApariencia() {
+        const root = document.documentElement;
+        let temaEfectivo = apariencia.tema;
+        if (temaEfectivo === 'sistema') {
+            temaEfectivo = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'oscuro' : 'claro';
+        }
+        root.setAttribute('data-tema', temaEfectivo);
+        root.setAttribute('data-fondo', apariencia.fondo || 'default');
+        root.style.setProperty('--accent-user', apariencia.acento || '#1a2332');
+
+        document.querySelectorAll('.theme-option').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.tema === apariencia.tema);
+        });
+        document.querySelectorAll('.accent-swatch').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.accent === apariencia.acento);
+        });
+        document.querySelectorAll('.bg-swatch').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.bg === apariencia.fondo);
+        });
+    }
+
+    async function guardarApariencia() {
+        try {
+            await set(ref(rtdb, 'users/' + currentUser.uid + '/settings/apariencia'), apariencia);
+        } catch (err) {
+            console.error('Error guardando apariencia:', err);
+        }
+    }
+
+    async function cargarApariencia() {
+        if (!currentUser) { aplicarApariencia(); return; }
+        try {
+            const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/settings/apariencia'));
+            if (snap.exists()) {
+                const val = snap.val();
+                apariencia = {
+                    tema: val.tema || 'claro',
+                    acento: val.acento || '#1a2332',
+                    fondo: val.fondo || 'default'
+                };
+            }
+        } catch (err) {
+            console.error('Error cargando apariencia:', err);
+        }
+        aplicarApariencia();
+    }
+
+    function initApariencia() {
+        document.querySelectorAll('.theme-option').forEach(function(btn) {
+            if (btn._wired) return;
+            btn._wired = true;
+            btn.addEventListener('click', function() {
+                apariencia.tema = this.dataset.tema;
+                aplicarApariencia();
+                guardarApariencia();
+            });
+        });
+        document.querySelectorAll('.accent-swatch').forEach(function(btn) {
+            if (btn._wired) return;
+            btn._wired = true;
+            btn.addEventListener('click', function() {
+                apariencia.acento = this.dataset.accent;
+                aplicarApariencia();
+                guardarApariencia();
+            });
+        });
+        document.querySelectorAll('.bg-swatch').forEach(function(btn) {
+            if (btn._wired) return;
+            btn._wired = true;
+            btn.addEventListener('click', function() {
+                apariencia.fondo = this.dataset.bg;
+                aplicarApariencia();
+                guardarApariencia();
+            });
+        });
     }
 
     async function cargarNotifSettings() {
@@ -2452,8 +3147,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         initPresence();
         buildAssistantUI();
         cargarNotifSettings();
+        cargarApariencia();
         cargarUserStats().then(registrarEntrada);
+        cargarChatsIA().then(renderUserStats);
         initChatUI();
+        initMessagesTabs();
+        initApariencia();
         renderActivityTimeline();
 
         const headerSearchInput = document.getElementById('searchInput');
@@ -2511,7 +3210,11 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 'configuracion': 'section-configuracion'
             };
             const target = sectionMap[hash];
-            if (target) navigateTo(target);
+            if (target) {
+                navigateTo(target);
+                if (hash === 'perfil') mostrarPerfilPropio();
+                if (hash === 'mensajes') switchMessagesTab('conversaciones');
+            }
         }
     }
 
