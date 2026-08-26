@@ -23,7 +23,7 @@ if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
 const app = initializeApp(firebaseConfig);
 
 const appCheck = initializeAppCheck(app, {
-  provider: new ReCaptchaEnterpriseProvider("6LfeVpItAAAAABmHq3TmIqbUcADs-DmU4FsH_gKc"),
+  provider: new ReCaptchaEnterpriseProvider("6LdH2pktAAAAAB08e_SG4reLg5WeEut9HRC7iUQo"),
   isTokenAutoRefreshEnabled: true
 });
 

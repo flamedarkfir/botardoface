@@ -100,7 +100,7 @@ body {
 .login-container {
     width: 100%;
     max-width: 440px;
-    margin: 2rem auto;
+    margin: 1.2rem auto;
     padding: 0 1rem;
 }
 
@@ -109,7 +109,7 @@ body {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-radius: 24px;
-    padding: 2.5rem 2rem 2rem;
+    padding: 1.8rem 2rem 1.6rem;
     border: 1px solid rgba(255, 255, 255, 0.7);
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.06);
     transition: all 0.3s ease;
@@ -117,19 +117,19 @@ body {
 
 .login-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1.2rem;
 }
 
 .logo-icon {
-    width: 64px;
-    height: 64px;
-    margin: 0 auto 1rem;
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 0.6rem;
     background: rgba(26, 35, 50, 0.04);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 12px;
+    padding: 10px;
 }
 
 .logo-icon img {
@@ -154,7 +154,7 @@ body {
 .login-form {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 0.95rem;
 }
 
 .form-group {
@@ -318,7 +318,7 @@ body {
     display: flex;
     align-items: center;
     gap: 1rem;
-    margin: 1.5rem 0 1.25rem;
+    margin: 1rem 0 0.9rem;
     color: #9aabbb;
     font-size: 0.8rem;
 }
@@ -378,7 +378,7 @@ body {
 
 .login-footer-text {
     text-align: center;
-    margin-top: 1.5rem;
+    margin-top: 0.8rem;
     font-size: 0.7rem;
     color: #6a7a8f;
 }
@@ -392,9 +392,9 @@ body {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     color: #a8b5c7;
-    padding: 3rem 2rem 0;
+    padding: 2rem 2rem 0;
     border-top: 1px solid rgba(255, 255, 255, 0.05);
-    margin-top: 2rem;
+    margin-top: 1rem;
 }
 
 .footer-content {
@@ -402,8 +402,8 @@ body {
     margin: 0 auto;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 2.5rem;
-    padding-bottom: 2.5rem;
+    gap: 2rem;
+    padding-bottom: 1.8rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -502,12 +502,16 @@ body {
     }
 
     .login-container {
-        margin: 1rem auto;
+        margin: 0.7rem auto;
     }
 
     .login-card {
-        padding: 1.8rem 1.2rem 1.5rem;
+        padding: 1.4rem 1.2rem 1.2rem;
         border-radius: 20px;
+    }
+
+    .login-header {
+        margin-bottom: 0.9rem;
     }
 
     .login-header h1 {
@@ -515,9 +519,10 @@ body {
     }
 
     .logo-icon {
-        width: 52px;
-        height: 52px;
-        padding: 10px;
+        width: 46px;
+        height: 46px;
+        margin: 0 auto 0.5rem;
+        padding: 9px;
     }
 
     .form-group input {
@@ -542,7 +547,7 @@ body {
     }
 
     .login-divider {
-        margin: 1.2rem 0 1rem;
+        margin: 0.9rem 0 0.8rem;
     }
 
     .btn-primary {
@@ -555,12 +560,13 @@ body {
     }
 
     .footer {
-        padding: 2rem 1rem 0;
+        padding: 1.4rem 1rem 0;
+        margin-top: 0.7rem;
     }
     .footer-content {
         grid-template-columns: repeat(2, 1fr);
-        gap: 1.2rem;
-        padding-bottom: 1.5rem;
+        gap: 1rem;
+        padding-bottom: 1.1rem;
     }
     .footer-section h4 {
         font-size: 0.85rem;
@@ -616,12 +622,13 @@ body {
     }
 
     .footer {
-        padding: 1.5rem 0.8rem 0;
+        padding: 1.1rem 0.8rem 0;
+        margin-top: 0.5rem;
     }
     .footer-content {
         grid-template-columns: 1fr 1fr;
-        gap: 0.8rem;
-        padding-bottom: 1rem;
+        gap: 0.7rem;
+        padding-bottom: 0.8rem;
     }
     .footer-section h4 {
         font-size: 0.75rem;
