@@ -27,7 +27,11 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let contactEmojis = {};
     let attachedChatListeners = new Set();
     let userStats = { loginCount: 0, exportCount: 0, aiMessages: 0, aiChats: 0, lastLogin: null };
-    let apariencia = { tema: 'claro', acento: '#1a2332', fondo: 'default' };
+    let apariencia = { tema: 'claro', acento: '#1a2332' };
+    let perfilImagenes = {
+        banner: { tipo: 'default', valor: null, posX: 50, posY: 50 },
+        avatar: { tipo: 'default', valor: null, posX: 50, posY: 50 }
+    };
     let aiChatsList = [];
     let currentAiChatId = null;
     let aiDailyUsage = { fecha: '', count: 0 };
@@ -35,7 +39,6 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let viewingProfileUid = null;
     let viewingProfileData = null;
     let activeProfileTab = 'publicaciones';
-    let activeMessagesTab = 'conversaciones';
 
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, function(c) {
@@ -217,6 +220,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             'section-configuracion': 'Configuración'
         };
         if (pageTitle && titles[sectionId]) pageTitle.textContent = titles[sectionId];
+
+        if (sectionId === 'section-configuracion') actualizarNotasCambioNombreUsuario();
 
         if (window.innerWidth <= 768) {
             sidebar.classList.remove('open');
@@ -435,9 +440,26 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
     }
 
+    function fechaStringDeTimestamp(ts) {
+        if (!ts) return '';
+        const d = new Date(ts);
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    const MAX_NOTAS_POR_DIA = 5;
+
+    function ordenarPosts(arr) {
+        return arr.slice().sort(function(a, b) {
+            const aFijado = a.fijado ? 1 : 0;
+            const bFijado = b.fijado ? 1 : 0;
+            if (aFijado !== bFijado) return bFijado - aFijado;
+            return b.createdAt - a.createdAt;
+        });
+    }
+
     function renderizarPosts() {
         if (viewingProfileUid) return;
-        renderPostsGridGeneric(posts, true);
+        renderPostsGridGeneric(ordenarPosts(posts), true);
     }
 
     function actualizarBio() {
@@ -460,7 +482,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             if (snap.exists()) {
                 snap.forEach(function(child) {
                     const val = child.val();
-                    posts.push({ id: child.key, texto: val.texto, fecha: val.fecha, createdAt: val.createdAt || 0 });
+                    posts.push({ id: child.key, texto: val.texto, fecha: val.fecha, createdAt: val.createdAt || 0, fijado: !!val.fijado });
                 });
                 posts.sort(function(a, b) { return b.createdAt - a.createdAt; });
             }
@@ -474,13 +496,19 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     async function agregarPost(texto) {
         if (!currentUser) return;
+        const hoyStr = getTodayString();
+        const notasHoy = posts.filter(function(p) { return fechaStringDeTimestamp(p.createdAt) === hoyStr; }).length;
+        if (notasHoy >= MAX_NOTAS_POR_DIA) {
+            alert('Ya llegaste al máximo de ' + MAX_NOTAS_POR_DIA + ' notas por día. Intenta de nuevo mañana.');
+            return;
+        }
         const ahora = new Date();
         const fecha = ahora.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
         const createdAt = Date.now();
         try {
             const newRef = push(ref(rtdb, 'users/' + currentUser.uid + '/posts'));
-            await set(newRef, { texto: texto, fecha: fecha, createdAt: createdAt });
-            posts.unshift({ id: newRef.key, texto: texto, fecha: fecha, createdAt: createdAt });
+            await set(newRef, { texto: texto, fecha: fecha, createdAt: createdAt, fijado: false });
+            posts.unshift({ id: newRef.key, texto: texto, fecha: fecha, createdAt: createdAt, fijado: false });
             renderizarPosts();
             actualizarStats();
         } catch (err) {
@@ -488,6 +516,23 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             alert('No se pudo guardar la nota: ' + (err.code || err.message));
         }
     }
+
+    async function toggleFijarPost(id) {
+        if (!currentUser) return;
+        const post = posts.find(function(p) { return p.id === id; });
+        if (!post) return;
+        const nuevoValor = !post.fijado;
+        try {
+            await update(ref(rtdb, 'users/' + currentUser.uid + '/posts/' + id), { fijado: nuevoValor });
+            post.fijado = nuevoValor;
+            renderizarPosts();
+        } catch (err) {
+            console.error('Error fijando nota:', err);
+            alert('No se pudo actualizar la nota: ' + (err.code || err.message));
+        }
+    }
+
+    window.toggleFijarPost = toggleFijarPost;
 
     async function eliminarPost(id) {
         if (!confirm('¿Eliminar esta nota?')) return;
@@ -664,15 +709,25 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         html += '</tr></thead><tbody>';
 
         horas.forEach(hora => {
-            html += `<tr><td class="hour-cell">${hora}</td>`;
+            // La marca de "está pasando ahora" se pone en la celda de la
+            // HORA (columna izquierda), no en la materia: así no hace
+            // falta cambiarle el color/borde a la materia para saber que
+            // es la clase activa, basta con mirar qué hora está resaltada.
+            const horaActivaEnFila = diasConClases.some(function(dia) {
+                const c = clasesArr.find(c => c.dias.includes(dia) && c.horaInicio === hora);
+                return c && estaActivaAhora(c);
+            });
+            html += `<tr><td class="hour-cell${horaActivaEnFila ? ' hour-cell-active' : ''}">${hora}</td>`;
             diasConClases.forEach(dia => {
                 const clase = clasesArr.find(c => c.dias.includes(dia) && c.horaInicio === hora);
                 if (clase) {
-                    const activa = estaActivaAhora(clase);
                     const esRecreoClase = esRecreo(clase);
                     const bgColor = esRecreoClase ? '#fff3e0' : clase.color;
                     const textColor = esRecreoClase ? '#e65100' : clase.colorText;
-                    const borderColor = esRecreoClase ? '#ff9800' : (activa ? '#2e7d32' : 'transparent');
+                    // El borde ya no depende de si está activa (eso ahora lo
+                    // marca la hora): sirve como color identificador fijo de
+                    // la materia, tanto en modo claro como oscuro.
+                    const borderColor = esRecreoClase ? '#ff9800' : (clase.colorText || 'transparent');
                     const icono = esRecreoClase ? 'fa-coffee' : clase.icono;
                     const label = esRecreoClase ? 'RECREO' : '';
 
@@ -682,7 +737,6 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                                 <i class="fas ${icono}"></i>
                                 <span class="class-name">${clase.nombre}</span>
                                 ${label ? `<span class="recreo-badge">${label}</span>` : ''}
-                                ${activa ? `<span class="active-dot">●</span>` : ''}
                                 ${editable ? `<button class="class-edit-btn" onclick="editarClase('${clase.id}')"><i class="fas fa-edit"></i></button>
                                 <button class="class-delete-btn" onclick="eliminarClase('${clase.id}')"><i class="fas fa-trash"></i></button>` : ''}
                             </div>
@@ -781,44 +835,176 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
     }
 
+    // Las notificaciones ahora se guardan en la base de datos (ver
+    // guardarNotificacionPersistente más abajo) para que sigan ahí la
+    // próxima vez que entres, aunque hayan ocurrido con la app cerrada.
     function agregarNotificacionSistema(titulo, mensaje, target) {
-        if (notifSettings.sistema) {
-            const list = document.querySelector('#notifSistema .notif-list');
-            if (list) {
-                const emptyMsg = list.querySelector('li:only-child');
-                if (emptyMsg && emptyMsg.textContent.includes('Sistema funcionando')) list.innerHTML = '';
-                const item = document.createElement('li');
-                item.className = 'notif-item unread';
-                item.innerHTML = `
-                    <i class="fas fa-info-circle" style="color:#0d47a1;"></i>
-                    <div><p><strong>${escapeHtml(titulo)}</strong> - ${escapeHtml(mensaje)}</p><span>Hace unos segundos</span></div>
-                `;
-                wireNotifItemClick(item, target);
-                list.prepend(item);
-                actualizarBadge();
-            }
+        if (notifSettings.sistema && currentUser) {
+            guardarNotificacionPersistente(currentUser.uid, 'sistema', titulo, mensaje, target);
         }
         agregarActividad('#0d47a1', titulo, mensaje);
     }
 
-    function agregarNotificacionLive(titulo, mensaje, target) {
-        if (notifSettings.live) {
-            const list = document.querySelector('#notifLive .notif-list');
-            if (list) {
-                const emptyMsg = list.querySelector('li:only-child');
-                if (emptyMsg && emptyMsg.textContent.includes('No hay notificaciones')) list.innerHTML = '';
-                const item = document.createElement('li');
-                item.className = 'notif-item unread';
-                item.innerHTML = `
-                    <i class="fas fa-bell" style="color:#e65100;"></i>
-                    <div><p><strong>${escapeHtml(titulo)}</strong> - ${escapeHtml(mensaje)}</p><span>Hace unos segundos</span></div>
-                `;
-                wireNotifItemClick(item, target);
-                list.prepend(item);
-                actualizarBadge();
-            }
+    function agregarNotificacionLive(titulo, mensaje, target, avatar) {
+        if (notifSettings.live && currentUser) {
+            guardarNotificacionPersistente(currentUser.uid, 'live', titulo, mensaje, target, avatar).then(function(id) {
+                if (id) notifIdsRenderizados.add(id);
+            });
         }
         agregarActividad('#e65100', titulo, mensaje);
+    }
+
+    // ===== Notificaciones persistentes =====
+    // Antes vivían solo en el DOM y se perdían al recargar o si no
+    // estabas conectado cuando ocurrían (p. ej. un nuevo seguidor).
+    // Ahora se guardan en users/{uid}/notificaciones/{id} y un listener
+    // en tiempo real las va mostrando en la campanita, ya sea que
+    // acaben de pasar o llevaran horas esperando desde tu último login.
+    const MAX_NOTIFICACIONES_GUARDADAS = 40;
+    let notifIdsRenderizados = new Set();
+    const notifSessionStart = Date.now();
+
+    async function guardarNotificacionPersistente(uid, tipo, titulo, mensaje, target, avatar) {
+        try {
+            const nuevaRef = push(ref(rtdb, 'users/' + uid + '/notificaciones'));
+            await set(nuevaRef, {
+                tipo: tipo,
+                titulo: titulo,
+                mensaje: mensaje,
+                target: target || null,
+                avatar: avatar || null,
+                ts: Date.now(),
+                leido: false
+            });
+            return nuevaRef.key;
+        } catch (err) {
+            console.error('Error guardando notificación persistente:', err);
+            return null;
+        }
+    }
+
+    function formatearTiempoRelativo(ts) {
+        if (!ts) return '';
+        const diffMs = Date.now() - ts;
+        const min = Math.floor(diffMs / 60000);
+        if (min < 1) return 'Hace unos segundos';
+        if (min < 60) return `Hace ${min} minuto${min === 1 ? '' : 's'}`;
+        const horas = Math.floor(min / 60);
+        if (horas < 24) return `Hace ${horas} hora${horas === 1 ? '' : 's'}`;
+        const dias = Math.floor(horas / 24);
+        return `Hace ${dias} día${dias === 1 ? '' : 's'}`;
+    }
+
+    async function marcarNotificacionLeida(id) {
+        if (!currentUser || !id) return;
+        try {
+            await update(ref(rtdb, 'users/' + currentUser.uid + '/notificaciones/' + id), { leido: true });
+        } catch (err) {
+            console.error('Error marcando notificación como leída:', err);
+        }
+    }
+
+    async function marcarTodasLeidasPersistente(tipo) {
+        if (!currentUser) return;
+        try {
+            const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/notificaciones'));
+            if (!snap.exists()) return;
+            const updates = {};
+            snap.forEach(function(child) {
+                const val = child.val();
+                const esDelTipo = tipo === 'sistema' ? val.tipo === 'sistema' : val.tipo !== 'sistema';
+                if (esDelTipo && !val.leido) updates[child.key + '/leido'] = true;
+            });
+            if (Object.keys(updates).length > 0) {
+                await update(ref(rtdb, 'users/' + currentUser.uid + '/notificaciones'), updates);
+            }
+        } catch (err) {
+            console.error('Error marcando todas como leídas:', err);
+        }
+    }
+
+    function renderNotifItemGuardado(n) {
+        const list = document.querySelector(n.tipo === 'sistema' ? '#notifSistema .notif-list' : '#notifLive .notif-list');
+        if (!list) return;
+        const icono = n.tipo === 'sistema' ? 'fa-info-circle' : 'fa-bell';
+        const color = n.tipo === 'sistema' ? '#0d47a1' : '#e65100';
+        const item = document.createElement('li');
+        item.className = 'notif-item' + (n.leido ? '' : ' unread');
+        item.innerHTML = `
+            <i class="fas ${icono}" style="color:${color};"></i>
+            <div><p><strong>${escapeHtml(n.titulo)}</strong> - ${escapeHtml(n.mensaje)}</p><span>${formatearTiempoRelativo(n.ts)}</span></div>
+        `;
+        if (n.target) {
+            item.classList.add('notif-clickable');
+            item.addEventListener('click', function() {
+                if (!n.leido) { marcarNotificacionLeida(n.id); n.leido = true; }
+                item.classList.remove('unread');
+                actualizarBadge();
+                const dropdown = document.getElementById('notifDropdown');
+                if (dropdown) dropdown.classList.remove('open');
+                manejarClickNotificacion(n.target);
+            });
+        }
+        list.appendChild(item);
+    }
+
+    function renderNotificacionesGuardadas(registros) {
+        const listLive = document.querySelector('#notifLive .notif-list');
+        const listSistema = document.querySelector('#notifSistema .notif-list');
+        if (listLive) listLive.innerHTML = '';
+        if (listSistema) listSistema.innerHTML = '';
+
+        const live = registros.filter(function(n) { return n.tipo !== 'sistema'; }).slice(0, MAX_NOTIFICACIONES_GUARDADAS);
+        const sistema = registros.filter(function(n) { return n.tipo === 'sistema'; }).slice(0, MAX_NOTIFICACIONES_GUARDADAS);
+
+        if (live.length === 0 && listLive) {
+            listLive.innerHTML = '<li style="text-align:center;padding:1rem;color:var(--text-secondary);font-size:0.8rem;"><i class="fas fa-bell-slash" style="font-size:1.5rem;display:block;margin-bottom:0.5rem;opacity:0.3;"></i>No hay notificaciones en vivo</li>';
+        } else {
+            live.forEach(renderNotifItemGuardado);
+        }
+
+        if (sistema.length === 0 && listSistema) {
+            listSistema.innerHTML = '<li style="text-align:center;padding:1rem;color:var(--text-secondary);font-size:0.8rem;"><i class="fas fa-check-circle" style="font-size:1.5rem;display:block;margin-bottom:0.5rem;opacity:0.3;"></i>Sistema funcionando correctamente</li>';
+        } else {
+            sistema.forEach(renderNotifItemGuardado);
+        }
+
+        actualizarBadge();
+    }
+
+    function iniciarListenerNotificaciones() {
+        if (!currentUser) return;
+        const notifRef = ref(rtdb, 'users/' + currentUser.uid + '/notificaciones');
+        let primeraCarga = true;
+        onValue(notifRef, function(snap) {
+            const registros = [];
+            if (snap.exists()) {
+                snap.forEach(function(child) {
+                    registros.push(Object.assign({ id: child.key }, child.val()));
+                });
+            }
+            registros.sort(function(a, b) { return (b.ts || 0) - (a.ts || 0); });
+            renderNotificacionesGuardadas(registros);
+
+            if (!primeraCarga) {
+                registros.forEach(function(n) {
+                    if (n.ts > notifSessionStart && n.tipo !== 'sistema' && !notifIdsRenderizados.has(n.id)) {
+                        notifIdsRenderizados.add(n.id);
+                        mostrarToastGenerico({
+                            titulo: n.titulo,
+                            mensaje: n.mensaje,
+                            target: n.target,
+                            avatarHtml: n.avatar ? escapeHtml(n.avatar) : null
+                        });
+                    }
+                });
+            } else {
+                registros.forEach(function(n) { notifIdsRenderizados.add(n.id); });
+            }
+            primeraCarga = false;
+        }, function(err) {
+            console.error('Error escuchando notificaciones:', err);
+        });
     }
 
     function agregarNotificacionBienvenida() {
@@ -1072,7 +1258,39 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     // Guarda qué avisos (próximo / comenzó) ya se dispararon hoy, para no
     // repetirlos en cada chequeo de 30s. Se reinicia solo al cambiar de día.
+    // Se persiste en localStorage (por usuario) porque antes esto vivía solo
+    // en una variable de JS: al recargar la página o volver a entrar la
+    // app se reiniciaba y volvía a avisar "empezó tal clase" aunque ya se
+    // hubiera avisado antes ese mismo día.
     let clasesNotificadasHoy = { fecha: null, avisos: new Set() };
+
+    function claveStorageAvisosClases() {
+        return 'botardo_avisos_clases_' + (currentUser ? currentUser.uid : 'anon');
+    }
+
+    function cargarClasesNotificadasHoy() {
+        const hoyStr = getTodayString();
+        try {
+            const raw = localStorage.getItem(claveStorageAvisosClases());
+            if (raw) {
+                const data = JSON.parse(raw);
+                if (data && data.fecha === hoyStr) {
+                    clasesNotificadasHoy = { fecha: hoyStr, avisos: new Set(data.avisos || []) };
+                    return;
+                }
+            }
+        } catch (err) { /* localStorage no disponible: se usa solo en memoria */ }
+        clasesNotificadasHoy = { fecha: hoyStr, avisos: new Set() };
+    }
+
+    function guardarClasesNotificadasHoy() {
+        try {
+            localStorage.setItem(claveStorageAvisosClases(), JSON.stringify({
+                fecha: clasesNotificadasHoy.fecha,
+                avisos: Array.from(clasesNotificadasHoy.avisos)
+            }));
+        } catch (err) { /* localStorage no disponible: no pasa nada, se sigue solo en memoria */ }
+    }
 
     function minutosDesdeMedianoche(horaStr) {
         const [h, m] = horaStr.split(':').map(Number);
@@ -1083,7 +1301,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const ahora = new Date();
         const hoyStr = getTodayString();
         if (clasesNotificadasHoy.fecha !== hoyStr) {
-            clasesNotificadasHoy = { fecha: hoyStr, avisos: new Set() };
+            cargarClasesNotificadasHoy();
         }
 
         const diaActual = diasSemana[ahora.getDay() === 0 ? 6 : ahora.getDay() - 1];
@@ -1102,6 +1320,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
             if (diffInicio > 0 && diffInicio <= 5 && !clasesNotificadasHoy.avisos.has(claveProximo)) {
                 clasesNotificadasHoy.avisos.add(claveProximo);
+                guardarClasesNotificadasHoy();
                 const emoji = esRecreo(clase) ? '☕' : '⏰';
                 agregarNotificacionLive(
                     `${emoji} Próximo`,
@@ -1112,9 +1331,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
             if (diffInicio <= 0 && diffFin > 0 && !clasesNotificadasHoy.avisos.has(claveComenzo)) {
                 clasesNotificadasHoy.avisos.add(claveComenzo);
+                guardarClasesNotificadasHoy();
+                // El mensaje sigue mencionando la materia (es el texto de la
+                // notificación), pero la hora de inicio es lo que se resalta
+                // en la grilla del horario en sí — ver hourCellActiva en
+                // construirGridHorarioHtml. En el perfil sigue mostrándose
+                // la materia en la que estás (ver actualizarBadgeClaseActual).
                 const emoji = esRecreo(clase) ? '☕' : '📚';
                 const titulo = esRecreo(clase) ? `${emoji} Recreo` : `${emoji} Ha comenzado`;
-                const mensaje = `"${clase.nombre}" empezó ahora · ${diaActual} · ${clase.horaInicio} - ${clase.horaFin}`;
+                const mensaje = `${clase.horaInicio} - ${clase.horaFin} · "${clase.nombre}" (${diaActual})`;
                 agregarNotificacionLive(titulo, mensaje, 'section-clases');
                 mostrarToastGenerico({
                     titulo: titulo,
@@ -1179,6 +1404,9 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                         <div class="form-group">
                             <label>Correo electrónico</label>
                             <input type="email" id="completeEmail" placeholder="Ej: ejemplo@gmail.com" />
+                            <div id="completeEmailHint" class="field-hint" style="display:none;font-size:0.78rem;color:var(--text-secondary,#6a7a8f);margin-top:0.3rem;">
+                                <i class="fas fa-lock"></i> Este correo viene de tu cuenta de Google/GitHub y no se puede cambiar aquí.
+                            </div>
                             <div id="completeEmailError" class="field-error"></div>
                         </div>
                     </div>
@@ -1206,6 +1434,18 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         nameInput.value = (existingData && existingData.name) || user.displayName || '';
         usernameInput.value = (existingData && existingData.username) || '';
         emailInput.value = (existingData && existingData.email) || user.email || '';
+
+        // El correo viene por defecto de la cuenta con la que se registró
+        // (Google, GitHub, o el correo/contraseña usado al crear la cuenta).
+        // Si Firebase Auth ya nos dio un correo confiable, se bloquea el
+        // campo para que no se pueda editar por error; si por algún caso
+        // raro no vino correo (ej. GitHub sin correo público), se deja
+        // editable como respaldo para no bloquear el registro.
+        const emailHint = document.getElementById('completeEmailHint');
+        const correoConfiable = !!user.email;
+        emailInput.readOnly = correoConfiable;
+        emailInput.classList.toggle('input-locked', correoConfiable);
+        if (emailHint) emailHint.style.display = correoConfiable ? 'block' : 'none';
 
         overlay.classList.add('open');
 
@@ -1282,7 +1522,19 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 overlay.classList.remove('open');
                 overlay.remove();
                 init();
-                if (esCuentaNueva) agregarNotificacionBienvenida();
+                if (esCuentaNueva) {
+                    agregarNotificacionBienvenida();
+                    // En cuentas recién creadas, algunas estadísticas dependen
+                    // de listeners en tiempo real (seguidores, clases, chats de
+                    // IA) que pueden no haber terminado de sincronizar en el
+                    // primer render de init(). Se recargan una vez más tras un
+                    // instante para que se vean correctas desde el principio.
+                    setTimeout(function() {
+                        cargarUserStats();
+                        actualizarStats();
+                        renderUserStats();
+                    }, 1800);
+                }
             } catch (err) {
                 console.error('Error guardando datos en Firestore:', err);
                 emailError.textContent = 'No se pudo guardar: ' + (err.code || err.message || err);
@@ -1566,23 +1818,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     newList.push({ uid: child.key, name: val.name, username: val.username });
                 });
             }
-            if (followersInitialized) {
-                newSet.forEach(function(uid) {
-                    if (!followersSet.has(uid)) {
-                        const u = newList.find(function(x) { return x.uid === uid; });
-                        if (u) {
-                            const target = 'perfil:' + uid + ':' + encodeURIComponent(u.name || '') + ':' + (u.username || '');
-                            agregarNotificacionLive('Nuevo seguidor', `${u.name} (@${u.username}) ahora te sigue`, target);
-                            mostrarToastGenerico({
-                                titulo: 'Nuevo seguidor',
-                                mensaje: `${u.name} (@${u.username}) ahora te sigue`,
-                                avatarHtml: escapeHtml((u.name || '?').charAt(0).toUpperCase()),
-                                target: target
-                            });
-                        }
-                    }
-                });
-            }
+            // La notificación de "nuevo seguidor" ya no se detecta comparando
+            // instantáneas aquí (eso solo funcionaba si estabas conectado en
+            // ese momento). Ahora toggleFollow() la guarda directamente en tu
+            // nodo de notificaciones al momento de seguirte, y el listener de
+            // iniciarListenerNotificaciones() la muestra apenas entres,
+            // aunque haya sido con la app cerrada.
             followersSet = newSet;
             followersList = newList;
             followersCount = followersList.length;
@@ -1599,7 +1840,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     function renderSearchResults(results) {
         const container = document.getElementById('userSearchResults');
         if (results.length === 0) {
-            container.innerHTML = '<p class="social-empty">No se encontraron usuarios.</p>';
+            container.innerHTML = '<p class="social-empty">No se encontró ningún usuario con ese nombre de usuario exacto.</p>';
             return;
         }
         container.innerHTML = results.map(function(u) {
@@ -1616,6 +1857,9 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }).join('');
     }
 
+    // Antes buscaba por coincidencia parcial (cualquier username que
+    // empezara con el término). Con muchos usuarios eso devolvía listas
+    // largas y ambiguas, así que ahora exige el nombre de usuario EXACTO.
     async function handleUserSearch() {
         const input = document.getElementById('userSearchInput');
         const resultsContainer = document.getElementById('userSearchResults');
@@ -1626,13 +1870,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         try {
             const usersRef = collection(db, 'users');
-            const q = query(usersRef, where('username', '>=', term), where('username', '<=', term + '\uf8ff'));
+            const q = query(usersRef, where('username', '==', term));
             const snap = await getDocs(q);
             const results = [];
             snap.forEach(function(docSnap) {
                 if (docSnap.id === currentUser.uid) return;
                 const data = docSnap.data();
-                if (!data.username || data.username.toLowerCase().indexOf(term) !== 0) return;
                 results.push({ uid: docSnap.id, name: data.name, username: data.username });
             });
             renderSearchResults(results);
@@ -1654,6 +1897,17 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             } else {
                 await set(ref(rtdb, 'users/' + currentUser.uid + '/following/' + uid), { name: name, username: username, followedAt: Date.now() });
                 await set(ref(rtdb, 'users/' + uid + '/followers/' + currentUser.uid), { name: currentUserData.name, username: currentUserData.username, followedAt: Date.now() });
+                // Se guarda directo en el nodo de notificaciones de la persona
+                // seguida (no en el propio) para que le llegue aunque no esté
+                // conectada ahora mismo, y aparezca en su campanita al entrar.
+                guardarNotificacionPersistente(
+                    uid,
+                    'live',
+                    'Nuevo seguidor',
+                    `${currentUserData.name} (@${currentUserData.username}) ahora te sigue`,
+                    'perfil:' + currentUser.uid + ':' + encodeURIComponent(currentUserData.name || '') + ':' + (currentUserData.username || ''),
+                    (currentUserData.name || '?').charAt(0).toUpperCase()
+                );
                 followingSet.add(uid);
                 if (!followingList.some(function(u) { return u.uid === uid; })) {
                     followingList.push({ uid: uid, name: name, username: username });
@@ -1820,15 +2074,26 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
     }
 
-    function renderChatContacts() {
+    function renderChatContacts(filtro) {
         const container = document.getElementById('chatContactsList');
         if (!container) return;
         container.className = 'chat-contacts-list';
+        const term = (filtro || '').trim().toLowerCase();
+        const lista = term
+            ? chatContacts.filter(function(u) {
+                return u.name.toLowerCase().includes(term) || u.username.toLowerCase().includes(term);
+            })
+            : chatContacts;
+
         if (chatContacts.length === 0) {
             container.innerHTML = '<p class="social-empty">Sigue a alguien o consigue seguidores para poder chatear.</p>';
             return;
         }
-        container.innerHTML = chatContacts.map(function(u) {
+        if (lista.length === 0) {
+            container.innerHTML = '<p class="social-empty">Ningún contacto coincide con "' + escapeHtml(filtro) + '".</p>';
+            return;
+        }
+        container.innerHTML = lista.map(function(u) {
             const canWrite = puedeEscribirA(u.uid);
             const activeClass = u.uid === currentChatUid ? ' active' : '';
             const online = estaEnLinea(u.uid);
@@ -2115,6 +2380,37 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }).join('');
     }
 
+    let claseActualBadgeTimer = null;
+
+    // Muestra en la cabecera del perfil, en tiempo real, la clase en la que
+    // está el dueño del perfil ahora mismo (si tiene alguna activa). Sirve
+    // tanto para tu propio perfil (clasesArr = clases, tu horario) como para
+    // el de alguien más (clasesArr = su horario, ya cargado aparte).
+    function actualizarBadgeClaseActual(clasesArr) {
+        const lista = clasesArr || clases;
+        const badge = document.getElementById('profileClaseActualBadge');
+        const texto = document.getElementById('profileClaseActualTexto');
+        if (!badge || !texto) return;
+
+        const render = function() {
+            if (!document.body.contains(badge)) {
+                if (claseActualBadgeTimer) { clearInterval(claseActualBadgeTimer); claseActualBadgeTimer = null; }
+                return;
+            }
+            const claseActiva = (lista || []).find(function(c) { return estaActivaAhora(c); });
+            if (claseActiva) {
+                texto.textContent = esRecreo(claseActiva) ? 'En recreo ahora' : `En clase ahora: ${claseActiva.nombre}`;
+                badge.style.display = 'inline-flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        };
+
+        render();
+        if (claseActualBadgeTimer) clearInterval(claseActualBadgeTimer);
+        claseActualBadgeTimer = setInterval(render, 30000);
+    }
+
     let profileHorarioTimer = null;
 
     function renderProfileHorarioResumen(clasesArr) {
@@ -2160,10 +2456,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
         grid.innerHTML = postsArr.map(function(post) {
             return `
-                <div class="post-card">
+                <div class="post-card${post.fijado ? ' pinned' : ''}">
                     <div class="post-header">
-                        <span class="post-date">${post.fecha}</span>
-                        ${soyPropietario ? `<div class="post-actions"><button class="btn-delete-post" onclick="eliminarPost('${post.id}')"><i class="fas fa-trash"></i></button></div>` : ''}
+                        <span class="post-date">${post.fijado ? '<i class="fas fa-thumbtack post-pin-icon"></i> ' : ''}${post.fecha}</span>
+                        ${soyPropietario ? `<div class="post-actions">
+                            <button class="btn-pin-post${post.fijado ? ' active' : ''}" onclick="toggleFijarPost('${post.id}')" title="${post.fijado ? 'Quitar de fijadas' : 'Fijar nota'}"><i class="fas fa-thumbtack"></i></button>
+                            <button class="btn-delete-post" onclick="eliminarPost('${post.id}')"><i class="fas fa-trash"></i></button>
+                        </div>` : ''}
                     </div>
                     <div class="post-content">${escapeHtml(post.texto)}</div>
                 </div>
@@ -2260,18 +2559,23 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         renderProfileActionsOwn();
         actualizarBio();
         actualizarEmoji();
-        renderPostsGridGeneric(posts, true);
+        renderPostsGridGeneric(ordenarPosts(posts), true);
         renderProfileMaterias(clases);
         renderProfileHorarioResumen(clases);
         renderFollowingList(followingList);
         renderFollowersList(followersList);
         renderFriendsList();
         actualizarStats();
+        aplicarAccentPerfilView(apariencia.acento);
+        aplicarBannerPerfilView(perfilImagenes.banner);
+        aplicarAvatarPerfilView(perfilImagenes.avatar);
+        actualizarBadgeClaseActual();
 
         const tabsRow = document.getElementById('profileTabs');
         if (tabsRow) tabsRow.style.display = '';
-        const searchCard = document.getElementById('socialSearchCard');
-        if (searchCard) searchCard.style.display = '';
+
+        const view = document.getElementById('profileView');
+        if (view) view.classList.add('is-own');
 
         switchProfileTab('publicaciones');
     }
@@ -2296,6 +2600,9 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         viewingProfileUid = uid;
         viewingProfileData = { name: name, username: username };
 
+        const view = document.getElementById('profileView');
+        if (view) view.classList.remove('is-own');
+
         const backBtn = document.getElementById('profileBackBtn');
         if (backBtn) backBtn.style.display = 'inline-flex';
 
@@ -2309,8 +2616,6 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         const tabsRow = document.getElementById('profileTabs');
         if (tabsRow) tabsRow.style.display = '';
-        const searchCard = document.getElementById('socialSearchCard');
-        if (searchCard) searchCard.style.display = 'none';
 
         switchProfileTab('publicaciones');
 
@@ -2329,16 +2634,19 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             document.getElementById('profileBio').textContent = perfil.bio || 'Sin descripción.';
             const emojiEl = document.getElementById('statusEmoji');
             if (emojiEl) emojiEl.textContent = perfil.emoji || '😊';
+            aplicarAccentPerfilView(perfil.acento);
+            aplicarBannerPerfilView(perfil.banner);
+            aplicarAvatarPerfilView(perfil.avatar);
 
             const postsArr = [];
             if (postsSnap.exists()) postsSnap.forEach(function(c) { postsArr.push(c.val()); });
-            postsArr.sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
-            renderPostsGridGeneric(postsArr, false);
+            renderPostsGridGeneric(ordenarPosts(postsArr), false);
 
             const clasesArr = [];
             if (clasesSnap.exists()) clasesSnap.forEach(function(c) { clasesArr.push(c.val()); });
             renderProfileMaterias(clasesArr);
             renderProfileHorarioResumen(clasesArr);
+            actualizarBadgeClaseActual(clasesArr);
 
             const otherFollowers = [];
             if (followersSnap.exists()) followersSnap.forEach(function(c) { otherFollowers.push(Object.assign({ uid: c.key }, c.val())); });
@@ -2392,11 +2700,11 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     const ASSISTANT_SYSTEM_INSTRUCTION = `Eres "Botardo", el asistente virtual dentro del dashboard de Botardo Face App, una aplicación educativa de reconocimiento facial creada por estudiantes del Colegio Luis Madina (Colombia) para el taller de Sistemas Informáticos.
 
 CONOCIMIENTO DE LA APLICACIÓN (úsalo para responder con precisión):
-- Secciones del panel lateral: Panel (resumen y actividad reciente), Perfil (perfil propio y de otros usuarios, con notas, horario, materias, seguidores, seguidos y amigos), Mensajes (pestaña "Conversaciones" para chatear con otras personas, y pestaña "IA" con el historial de chats contigo), Horario (crear y editar el horario de clases semanal), Cámara (demo de reconocimiento facial), Estadísticas (datos de uso de la cuenta), Configuración (seguridad, notificaciones, apariencia, datos, uso de IA) y Proyectos (proyectos propios de Botardo).
+- Secciones del panel lateral: Panel (resumen y actividad reciente), Perfil (perfil propio y de otros usuarios, con notas, horario, materias, seguidores, seguidos y amigos), Mensajes (conversaciones con otras personas; tú, la IA, se accede desde el botón flotante del asistente en cualquier sección, no desde Mensajes), Horario (crear y editar el horario de clases semanal), Cámara (demo de reconocimiento facial), Estadísticas (datos de uso de la cuenta), Configuración (seguridad, notificaciones, apariencia, datos, uso de IA) y Proyectos (proyectos propios de Botardo).
 - Perfil: cada usuario tiene nombre, nombre de usuario, descripción (bio), un emoji de estado, notas/publicaciones, horario de clases, materias, seguidores y seguidos. Dos usuarios son "amigos" cuando se siguen mutuamente.
 - Mensajería: solo puedes escribirle a alguien si esa persona te sigue a ti.
-- Tienes un límite de 5 mensajes diarios contigo (la IA) para cuentas gratuitas; los usuarios Premium (función futura) no tendrán límite.
-- Función VIP: en cada mensaje recibirás un bloque "[CONTEXTO DEL HORARIO EN TIEMPO REAL]" con el horario real de hoy del usuario, su clase actual y sus materias. Úsalo para responder con precisión cuando pregunten en qué clase están, qué les toca hoy, cuánto falta para la siguiente clase, etc. No inventes horarios: si el contexto dice que no hay clases hoy o ninguna clase activa, dilo tal cual. No repitas el bloque de contexto en tu respuesta, es solo para ti.
+- Tienes un límite de 5 mensajes diarios contigo (la IA) para cuentas gratuitas; los usuarios Premium (función futura) no tendrán límite. Un mensaje solo cuenta contra ese límite si logras responder; si hay un error técnico, no se descuenta.
+- Función VIP: en cada mensaje recibirás un bloque "[CONTEXTO DEL PERFIL DEL USUARIO]" con su nombre, bio, notas, seguidores/seguidos/amigos y plan, y un bloque "[CONTEXTO DEL HORARIO EN TIEMPO REAL]" con el horario real de hoy del usuario, su clase actual y sus materias. Úsalo para responder con precisión sobre su perfil o cuando pregunten en qué clase están, qué les toca hoy, cuánto falta para la siguiente clase, etc. No inventes datos: si un bloque dice que no hay información, dilo tal cual. No repitas los bloques de contexto en tu respuesta, son solo para ti.
 - Responde siempre en español, de forma breve, cálida y clara. Puedes usar formato Markdown (negrita con **, listas con -, etc.) cuando ayude a la claridad.
 
 NAVEGACIÓN: si el usuario te pide ir a una sección de la app (por ejemplo "llévame a mi perfil", "abre configuración", "muéstrame mis mensajes"), responde brevemente confirmando la acción y termina tu respuesta agregando en una línea aparte, exactamente, una de estas marcas según corresponda:
@@ -2463,6 +2771,30 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         return texto;
     }
 
+    // Le da a la IA visibilidad del perfil de quien le escribe: nombre,
+    // usuario, bio, emoji de estado, notas, seguidores/seguidos/amigos y
+    // plan de cuenta. Se recalcula en cada mensaje (no se guarda en el
+    // historial) para reflejar siempre el estado más reciente del perfil.
+    function construirContextoPerfilIA() {
+        if (!currentUser) return '';
+        let amigos = 0;
+        followingSet.forEach(function(uid) { if (followersSet.has(uid)) amigos++; });
+
+        let texto = '[CONTEXTO DEL PERFIL DEL USUARIO]\n';
+        texto += `Nombre: ${(currentUserData && currentUserData.name) || 'Sin nombre'}.\n`;
+        texto += `Usuario: @${(currentUserData && currentUserData.username) || 'sin_usuario'}.\n`;
+        texto += `Descripción (bio): ${bioText || 'Sin descripción.'}\n`;
+        texto += `Emoji de estado: ${statusEmoji || '😊'}.\n`;
+        texto += `Plan: ${(currentUserData && currentUserData.premium) ? 'Premium' : 'Gratis'}.\n`;
+        texto += `Notas publicadas: ${posts.length}.\n`;
+        if (posts.length > 0) {
+            texto += 'Últimas notas: ' + posts.slice(0, 3).map(function(p) { return '"' + p.texto + '"'; }).join(' | ') + '.\n';
+        }
+        texto += `Seguidores: ${followersCount}. Seguidos: ${followingSet.size}. Amigos (se siguen mutuamente): ${amigos}.\n`;
+        texto += '[FIN DEL CONTEXTO DE PERFIL]';
+        return texto;
+    }
+
     let assistantChat = null;
     let assistantChatForId = null;
 
@@ -2518,7 +2850,6 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         if (container) container.innerHTML = '';
         appendAssistantMessage('assistant', '¡Hola! Soy el asistente de Botardo Face. Puedo ayudarte con tu horario, tus notas, tu perfil, o llevarte a cualquier sección de la app. ¿En qué te ayudo?');
         await cargarChatsIA();
-        renderAiChatsListMessages();
         renderAiChatsDropdown();
         renderUserStats();
         return currentAiChatId;
@@ -2601,65 +2932,44 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         });
     }
 
-    function renderAiChatsListMessages() {
-        const list = document.getElementById('aiChatsListMessages');
-        if (!list) return;
-        if (aiChatsList.length === 0) {
-            list.innerHTML = '<p class="social-empty">Aún no has hablado con la IA. Inicia una conversación nueva.</p>';
-            return;
-        }
-        list.innerHTML = aiChatsList.map(function(c) {
-            return `
-                <div class="chat-contact-item" data-chat-id="${c.id}">
-                    <div class="chat-contact-avatar-wrap">
-                        <div class="chat-contact-avatar"><i class="fas fa-robot"></i></div>
-                    </div>
-                    <div class="chat-contact-info">
-                        <div class="chat-contact-name">${escapeHtml(c.titulo)}</div>
-                        <div class="chat-contact-meta">${formatearTiempoRelativo(c.updatedAt)}</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        list.querySelectorAll('.chat-contact-item').forEach(function(item) {
-            item.addEventListener('click', function() {
-                abrirAsistentePanel();
-                abrirChatIA(this.dataset.chatId);
-            });
-        });
-    }
-
     function abrirAsistentePanel() {
         const panel = document.getElementById('assistantPanel');
         if (panel) panel.style.display = 'flex';
     }
 
+    // "Mensajes" ahora tiene dos sub-pestañas dentro del panel de la
+    // izquierda: "Conversaciones" (chats existentes) y "Buscar personas"
+    // (antes vivía como buscador dentro de Perfil; se mudó aquí porque
+    // tiene más sentido buscar gente justo donde se empieza a chatear).
     function switchMessagesTab(tab) {
-        activeMessagesTab = tab;
-        document.querySelectorAll('.messages-top-tab').forEach(function(btn) {
+        const conv = document.getElementById('messagesContainer');
+        if (conv) conv.style.display = 'flex';
+        switchMessagesContactsTab(tab === 'buscar' ? 'buscar' : 'conversaciones');
+    }
+
+    function switchMessagesContactsTab(tab) {
+        document.querySelectorAll('.messages-contacts-tab').forEach(function(btn) {
             btn.classList.toggle('active', btn.dataset.mtab === tab);
         });
-        const conv = document.getElementById('messagesContainer');
-        const iaBox = document.getElementById('messagesIaContainer');
-        if (conv) conv.style.display = tab === 'conversaciones' ? 'flex' : 'none';
-        if (iaBox) iaBox.style.display = tab === 'ia' ? 'flex' : 'none';
-        if (tab === 'ia') {
-            cargarChatsIA().then(renderAiChatsListMessages);
-        }
+        const panelConv = document.getElementById('mcPanelConversaciones');
+        const panelBuscar = document.getElementById('mcPanelBuscar');
+        if (panelConv) panelConv.classList.toggle('active', tab !== 'buscar');
+        if (panelBuscar) panelBuscar.classList.toggle('active', tab === 'buscar');
     }
 
     function initMessagesTabs() {
-        document.querySelectorAll('.messages-top-tab').forEach(function(btn) {
+        document.querySelectorAll('.messages-contacts-tab').forEach(function(btn) {
             if (btn._wired) return;
             btn._wired = true;
-            btn.addEventListener('click', function() { switchMessagesTab(this.dataset.mtab); });
+            btn.addEventListener('click', function() {
+                switchMessagesContactsTab(this.dataset.mtab);
+            });
         });
-        const newChatBtn = document.getElementById('newAiChatFromMessagesBtn');
-        if (newChatBtn && !newChatBtn._wired) {
-            newChatBtn._wired = true;
-            newChatBtn.addEventListener('click', async function() {
-                abrirAsistentePanel();
-                await crearNuevoChatIA();
+        const contactsSearchInput = document.getElementById('chatContactsSearchInput');
+        if (contactsSearchInput && !contactsSearchInput._wired) {
+            contactsSearchInput._wired = true;
+            contactsSearchInput.addEventListener('input', function() {
+                renderChatContacts(this.value.trim().toLowerCase());
             });
         }
     }
@@ -2701,9 +3011,10 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         appendAssistantMessage('user', text);
         input.value = '';
         sendBtn.disabled = true;
-        incrementarStatAiMessage();
-        registrarUsoDiarioIA();
-        actualizarBloqueoChatIA();
+        // El consumo de mensajes (límite diario + estadística) se registra
+        // solo cuando la IA responde con éxito, más abajo. Así un error de
+        // la API (por ejemplo un fallo de red o un error del modelo) no le
+        // cuesta un mensaje al usuario.
         guardarMensajeIA(currentAiChatId, 'user', text);
 
         const container = document.getElementById('assistantMessages');
@@ -2717,17 +3028,22 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         try {
             const chat = getAssistantChat();
             const contextoHorario = construirContextoHorarioIA();
-            const result = await chat.sendMessage(contextoHorario + '\n\nMensaje del usuario: ' + text);
+            const contextoPerfil = construirContextoPerfilIA();
+            const result = await chat.sendMessage(contextoPerfil + '\n\n' + contextoHorario + '\n\nMensaje del usuario: ' + text);
             let responseText = result.response.text();
             const typing = document.getElementById('assistantTyping');
             if (typing) typing.remove();
+
+            // Solo llegados aquí sabemos que la IA sí respondió: ahora sí
+            // se cuenta el mensaje contra el límite diario y las stats.
+            incrementarStatAiMessage();
+            registrarUsoDiarioIA();
 
             const { texto, target } = extraerNavegacion(responseText);
             appendAssistantMessage('assistant', texto);
             guardarMensajeIA(currentAiChatId, 'assistant', texto);
             cargarChatsIA().then(function() {
                 renderAiChatsDropdown();
-                renderAiChatsListMessages();
             });
 
             if (target && document.getElementById(target)) {
@@ -2739,7 +3055,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             console.error('Error del asistente:', err);
             const typing = document.getElementById('assistantTyping');
             if (typing) typing.remove();
-            appendAssistantMessage('assistant', 'Lo siento, tuve un problema para responder: ' + (err.code || err.message || err));
+            appendAssistantMessage('assistant', 'Lo siento, tuve un problema para responder: ' + (err.code || err.message || err) + '. Este intento no cuenta contra tu límite diario, puedes intentarlo de nuevo.');
         } finally {
             actualizarBloqueoChatIA();
         }
@@ -2875,6 +3191,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                 const panel = this.closest('.notif-panel');
                 if (panel) panel.querySelectorAll('.notif-item.unread').forEach(item => item.classList.remove('unread'));
                 actualizarBadge();
+                marcarTodasLeidasPersistente(panel && panel.id === 'notifSistema' ? 'sistema' : 'live');
             });
         });
     }
@@ -3051,7 +3368,6 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             temaEfectivo = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'oscuro' : 'claro';
         }
         root.setAttribute('data-tema', temaEfectivo);
-        root.setAttribute('data-fondo', apariencia.fondo || 'default');
         root.style.setProperty('--accent-user', apariencia.acento || '#1a2332');
 
         document.querySelectorAll('.theme-option').forEach(function(btn) {
@@ -3060,16 +3376,75 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         document.querySelectorAll('.accent-swatch').forEach(function(btn) {
             btn.classList.toggle('active', btn.dataset.accent === apariencia.acento);
         });
-        document.querySelectorAll('.bg-swatch').forEach(function(btn) {
-            btn.classList.toggle('active', btn.dataset.bg === apariencia.fondo);
-        });
     }
 
     async function guardarApariencia() {
         try {
             await set(ref(rtdb, 'users/' + currentUser.uid + '/settings/apariencia'), apariencia);
+            // El acento es parte de "tu estilo" y se publica en el perfil
+            // para que quien te visite lo vea también, sin cambiarle su
+            // propio tema. El fondo/banner ahora se maneja aparte (ver
+            // perfil.banner / perfil.avatar más abajo).
+            await update(ref(rtdb, 'users/' + currentUser.uid + '/perfil'), {
+                acento: apariencia.acento
+            });
+            if (!viewingProfileUid) aplicarAccentPerfilView(apariencia.acento);
         } catch (err) {
             console.error('Error guardando apariencia:', err);
+        }
+    }
+
+    // Carpeta con las imágenes que se pueden elegir tanto para el banner
+    // como para la foto de perfil (mismo set de imágenes para ambos, como
+    // se pidió). Para agregar una nueva: sube el archivo como
+    // recourses/images/backgrounds/background_N.webp y añade su miniatura
+    // en construirGridSelectorImagenes() más abajo. No hace falta tocar
+    // nada más del JS.
+    const PROFILE_BG_PATH = '../recourses/images/backgrounds/';
+    const PROFILE_BG_COUNT = 10; // background_1.webp ... background_10.webp
+
+    // Paleta de colores sólidos para quien prefiera un banner sin imagen.
+    const BANNER_COLORS = ['#1a2332', '#0d6efd', '#7b2cbf', '#d81b60', '#2e7d32', '#e65100', '#00838f', '#c62828', '#f9a825', '#4527a0', '#37474f', '#ad1457'];
+
+    // Aplica el acento elegido por el dueño del perfil, pero SOLO dentro
+    // de la tarjeta de perfil (#profileView) — así quien visita un perfil
+    // ve "el estilo" de esa persona sin que le cambie su propio tema en
+    // el resto de la app. El banner/avatar se aplican aparte con
+    // aplicarBannerPerfilView() / aplicarAvatarPerfilView().
+    function aplicarAccentPerfilView(acento) {
+        const view = document.getElementById('profileView');
+        if (!view) return;
+        view.style.setProperty('--accent-user', acento || '#1a2332');
+    }
+
+    function aplicarBannerPerfilView(banner) {
+        const bannerEl = document.getElementById('profileBanner');
+        if (!bannerEl) return;
+        banner = banner || { tipo: 'default' };
+        bannerEl.classList.remove('banner-imagen', 'banner-color');
+        bannerEl.style.backgroundImage = '';
+        bannerEl.style.backgroundColor = '';
+        bannerEl.style.backgroundPosition = '';
+        if (banner.tipo === 'imagen' && banner.valor) {
+            bannerEl.classList.add('banner-imagen');
+            bannerEl.style.backgroundImage = `url('${PROFILE_BG_PATH}${banner.valor}.webp')`;
+            bannerEl.style.backgroundPosition = `${banner.posX != null ? banner.posX : 50}% ${banner.posY != null ? banner.posY : 50}%`;
+        } else if (banner.tipo === 'color' && banner.valor) {
+            bannerEl.classList.add('banner-color');
+            bannerEl.style.backgroundColor = banner.valor;
+        }
+    }
+
+    function aplicarAvatarPerfilView(avatar, imgEl) {
+        const img = imgEl || document.getElementById('profileAvatar');
+        if (!img) return;
+        avatar = avatar || { tipo: 'default' };
+        if (avatar.tipo === 'imagen' && avatar.valor) {
+            img.src = PROFILE_BG_PATH + avatar.valor + '.webp';
+            img.style.objectPosition = `${avatar.posX != null ? avatar.posX : 50}% ${avatar.posY != null ? avatar.posY : 50}%`;
+        } else {
+            img.src = '../recourses/images/S/notfound.webp';
+            img.style.objectPosition = '';
         }
     }
 
@@ -3081,14 +3456,33 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                 const val = snap.val();
                 apariencia = {
                     tema: val.tema || 'claro',
-                    acento: val.acento || '#1a2332',
-                    fondo: val.fondo || 'default'
+                    acento: val.acento || '#1a2332'
                 };
             }
         } catch (err) {
             console.error('Error cargando apariencia:', err);
         }
         aplicarApariencia();
+    }
+
+    // Carga el banner y la foto de perfil guardados (una sola vez al
+    // iniciar sesión) y los aplica tanto al mini-avatar de la barra
+    // lateral como a la vista de "Mi perfil".
+    async function cargarImagenesPerfil() {
+        if (!currentUser) return;
+        try {
+            const snap = await get(ref(rtdb, 'users/' + currentUser.uid + '/perfil'));
+            if (snap.exists()) {
+                const val = snap.val();
+                if (val.banner) perfilImagenes.banner = Object.assign({ tipo: 'default', posX: 50, posY: 50 }, val.banner);
+                if (val.avatar) perfilImagenes.avatar = Object.assign({ tipo: 'default', posX: 50, posY: 50 }, val.avatar);
+            }
+        } catch (err) {
+            console.error('Error cargando imágenes de perfil:', err);
+        }
+        aplicarBannerPerfilView(perfilImagenes.banner);
+        aplicarAvatarPerfilView(perfilImagenes.avatar);
+        aplicarAvatarPerfilView(perfilImagenes.avatar, document.getElementById('userAvatar'));
     }
 
     function initApariencia() {
@@ -3110,15 +3504,341 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                 guardarApariencia();
             });
         });
-        document.querySelectorAll('.bg-swatch').forEach(function(btn) {
-            if (btn._wired) return;
-            btn._wired = true;
+        const goBtn = document.getElementById('goToProfileAppearanceBtn');
+        if (goBtn && !goBtn._wired) {
+            goBtn._wired = true;
+            goBtn.addEventListener('click', function() {
+                mostrarPerfilPropio();
+                navigateTo('section-perfil');
+            });
+        }
+    }
+
+    // ===== Selector de imagen (banner / foto de perfil) =====
+    // Comparten el mismo set de imágenes preestablecidas. El banner además
+    // admite un color sólido liso para quien no quiera usar imágenes.
+    let imgPickerState = null;
+
+    function construirGridImagenesHtml(seleccionActual) {
+        let html = '';
+        for (let i = 1; i <= PROFILE_BG_COUNT; i++) {
+            const valor = 'background_' + i;
+            const activa = seleccionActual === valor;
+            html += `<button type="button" class="img-picker-swatch${activa ? ' active' : ''}" data-valor="${valor}" style="background-image:url('${PROFILE_BG_PATH}${valor}.webp');" aria-label="Imagen ${i}"></button>`;
+        }
+        return html;
+    }
+
+    function actualizarPreviewImgPicker() {
+        const preview = document.getElementById('imgPickerPreview');
+        if (!preview || !imgPickerState) return;
+        preview.className = 'img-picker-preview' + (imgPickerState.tipo === 'avatar' ? ' img-picker-preview-avatar' : '');
+        if (imgPickerState.tipoSeleccion === 'imagen' && imgPickerState.valor) {
+            preview.style.backgroundImage = `url('${PROFILE_BG_PATH}${imgPickerState.valor}.webp')`;
+            preview.style.backgroundColor = '';
+            preview.style.backgroundPosition = `${imgPickerState.posX}% ${imgPickerState.posY}%`;
+        } else if (imgPickerState.tipoSeleccion === 'color' && imgPickerState.valor) {
+            preview.style.backgroundImage = '';
+            preview.style.backgroundColor = imgPickerState.valor;
+            preview.style.backgroundPosition = '';
+        } else {
+            preview.style.backgroundImage = '';
+            preview.style.backgroundColor = '';
+            preview.style.backgroundPosition = '';
+        }
+        const posWrap = document.getElementById('imgPickerPositionWrap');
+        if (posWrap) posWrap.style.display = imgPickerState.tipoSeleccion === 'imagen' ? 'flex' : 'none';
+    }
+
+    function buildImagePickerModal() {
+        if (document.getElementById('imgPickerOverlay')) return;
+        const html = `
+            <div class="modal-overlay" id="imgPickerOverlay">
+                <div class="modal img-picker-modal">
+                    <div class="modal-header">
+                        <h3 id="imgPickerTitle">Cambiar imagen</h3>
+                        <button class="modal-close" id="imgPickerClose">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="img-picker-preview" id="imgPickerPreview"></div>
+                        <div class="img-picker-position" id="imgPickerPositionWrap" style="display:none;">
+                            <label><i class="fas fa-arrows-left-right"></i> Posición horizontal
+                                <input type="range" min="0" max="100" value="50" id="imgPickerPosX" />
+                            </label>
+                            <label><i class="fas fa-arrows-up-down"></i> Posición vertical
+                                <input type="range" min="0" max="100" value="50" id="imgPickerPosY" />
+                            </label>
+                            <p class="img-picker-hint">Usa las barras para acomodar la imagen si es más grande que el espacio.</p>
+                        </div>
+                        <p class="img-picker-label">Imágenes</p>
+                        <div class="img-picker-grid" id="imgPickerGrid"></div>
+                        <div id="imgPickerColorsWrap" style="display:none;">
+                            <p class="img-picker-label">O un color sólido (sin imagen)</p>
+                            <div class="img-picker-colors" id="imgPickerColors"></div>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" id="imgPickerDefaultBtn" type="button">Quitar y usar el estilo por defecto</button>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-cancel" id="imgPickerCancel">Cancelar</button>
+                        <button class="btn btn-save" id="imgPickerSave">Guardar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', html);
+
+        document.getElementById('imgPickerClose').addEventListener('click', cerrarSelectorImagen);
+        document.getElementById('imgPickerCancel').addEventListener('click', cerrarSelectorImagen);
+        document.getElementById('imgPickerOverlay').addEventListener('click', function(e) {
+            if (e.target === this) cerrarSelectorImagen();
+        });
+        document.getElementById('imgPickerSave').addEventListener('click', guardarSeleccionImagen);
+        document.getElementById('imgPickerDefaultBtn').addEventListener('click', function() {
+            imgPickerState.tipoSeleccion = 'default';
+            imgPickerState.valor = null;
+            document.querySelectorAll('.img-picker-swatch, .img-picker-color').forEach(function(b) { b.classList.remove('active'); });
+            actualizarPreviewImgPicker();
+        });
+        document.getElementById('imgPickerPosX').addEventListener('input', function() {
+            imgPickerState.posX = Number(this.value);
+            actualizarPreviewImgPicker();
+        });
+        document.getElementById('imgPickerPosY').addEventListener('input', function() {
+            imgPickerState.posY = Number(this.value);
+            actualizarPreviewImgPicker();
+        });
+    }
+
+    function abrirSelectorImagen(tipo) {
+        buildImagePickerModal();
+        const actual = tipo === 'avatar' ? perfilImagenes.avatar : perfilImagenes.banner;
+        imgPickerState = {
+            tipo: tipo,
+            tipoSeleccion: actual.tipo || 'default',
+            valor: actual.valor || null,
+            posX: actual.posX != null ? actual.posX : 50,
+            posY: actual.posY != null ? actual.posY : 50
+        };
+
+        document.getElementById('imgPickerTitle').textContent = tipo === 'avatar' ? 'Cambiar foto de perfil' : 'Cambiar banner';
+        document.getElementById('imgPickerPosX').value = imgPickerState.posX;
+        document.getElementById('imgPickerPosY').value = imgPickerState.posY;
+
+        const grid = document.getElementById('imgPickerGrid');
+        grid.innerHTML = construirGridImagenesHtml(imgPickerState.tipoSeleccion === 'imagen' ? imgPickerState.valor : null);
+        grid.querySelectorAll('.img-picker-swatch').forEach(function(btn) {
             btn.addEventListener('click', function() {
-                apariencia.fondo = this.dataset.bg;
-                aplicarApariencia();
-                guardarApariencia();
+                imgPickerState.tipoSeleccion = 'imagen';
+                imgPickerState.valor = this.dataset.valor;
+                grid.querySelectorAll('.img-picker-swatch').forEach(function(b) { b.classList.remove('active'); });
+                document.querySelectorAll('.img-picker-color').forEach(function(b) { b.classList.remove('active'); });
+                this.classList.add('active');
+                actualizarPreviewImgPicker();
             });
         });
+
+        const colorsWrap = document.getElementById('imgPickerColorsWrap');
+        const colorsGrid = document.getElementById('imgPickerColors');
+        if (tipo === 'banner') {
+            colorsWrap.style.display = 'block';
+            colorsGrid.innerHTML = BANNER_COLORS.map(function(c) {
+                const activa = imgPickerState.tipoSeleccion === 'color' && imgPickerState.valor === c;
+                return `<button type="button" class="img-picker-color${activa ? ' active' : ''}" data-color="${c}" style="background:${c};" aria-label="Color ${c}"></button>`;
+            }).join('');
+            colorsGrid.querySelectorAll('.img-picker-color').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    imgPickerState.tipoSeleccion = 'color';
+                    imgPickerState.valor = this.dataset.color;
+                    grid.querySelectorAll('.img-picker-swatch').forEach(function(b) { b.classList.remove('active'); });
+                    colorsGrid.querySelectorAll('.img-picker-color').forEach(function(b) { b.classList.remove('active'); });
+                    this.classList.add('active');
+                    actualizarPreviewImgPicker();
+                });
+            });
+        } else {
+            colorsWrap.style.display = 'none';
+        }
+
+        actualizarPreviewImgPicker();
+        document.getElementById('imgPickerOverlay').classList.add('open');
+    }
+
+    function cerrarSelectorImagen() {
+        const overlay = document.getElementById('imgPickerOverlay');
+        if (overlay) overlay.classList.remove('open');
+        imgPickerState = null;
+    }
+
+    async function guardarSeleccionImagen() {
+        if (!imgPickerState || !currentUser) return;
+        const tipo = imgPickerState.tipo;
+        const datos = {
+            tipo: imgPickerState.tipoSeleccion,
+            valor: imgPickerState.tipoSeleccion === 'default' ? null : imgPickerState.valor,
+            posX: imgPickerState.tipoSeleccion === 'imagen' ? imgPickerState.posX : 50,
+            posY: imgPickerState.tipoSeleccion === 'imagen' ? imgPickerState.posY : 50
+        };
+        try {
+            await update(ref(rtdb, 'users/' + currentUser.uid + '/perfil'), { [tipo]: datos });
+            perfilImagenes[tipo] = datos;
+            if (tipo === 'banner') {
+                aplicarBannerPerfilView(datos);
+            } else {
+                aplicarAvatarPerfilView(datos);
+                aplicarAvatarPerfilView(datos, document.getElementById('userAvatar'));
+            }
+            cerrarSelectorImagen();
+        } catch (err) {
+            console.error('Error guardando imagen de perfil:', err);
+            alert('No se pudo guardar: ' + (err.code || err.message));
+        }
+    }
+
+    function initEditorImagenesPerfil() {
+        const bannerBtn = document.getElementById('editBannerBtn');
+        if (bannerBtn && !bannerBtn._wired) {
+            bannerBtn._wired = true;
+            bannerBtn.addEventListener('click', function() { abrirSelectorImagen('banner'); });
+        }
+        const avatarBtn = document.getElementById('editAvatarBtn');
+        if (avatarBtn && !avatarBtn._wired) {
+            avatarBtn._wired = true;
+            avatarBtn.addEventListener('click', function() { abrirSelectorImagen('avatar'); });
+        }
+    }
+
+    // ===== Cambiar nombre / nombre de usuario =====
+    // Nombre: se puede cambiar, pero como máximo una vez cada 30 días
+    // (para que no sea algo que la gente cambie todo el tiempo).
+    // Usuario: se puede cambiar UNA sola vez en la vida de la cuenta (la
+    // primera vez que lo cambian, después de haberlo creado en el
+    // registro). Para cambios adicionales hay que escribirle a soporte
+    // (el correo que aparece en terminos.html).
+    const DIAS_COOLDOWN_NOMBRE = 30;
+    const SOPORTE_EMAIL = 'jhorkbecerra@gmail.com';
+
+    function diasRestantes(desdeTs, diasEspera) {
+        if (!desdeTs) return 0;
+        const transcurridos = (Date.now() - desdeTs) / (1000 * 60 * 60 * 24);
+        return Math.max(0, Math.ceil(diasEspera - transcurridos));
+    }
+
+    function actualizarNotasCambioNombreUsuario() {
+        const nameInput = document.getElementById('changeNameInput');
+        const nameNote = document.getElementById('changeNameNote');
+        const nameBtn = document.getElementById('changeNameBtn');
+        const userInput = document.getElementById('changeUsernameInput');
+        const userNote = document.getElementById('changeUsernameNote');
+        const userBtn = document.getElementById('changeUsernameBtn');
+        if (!currentUserData) return;
+
+        if (nameInput && !nameInput._focused) nameInput.value = currentUserData.name || '';
+        if (userInput && !userInput._focused) userInput.value = currentUserData.username || '';
+
+        const restantesNombre = diasRestantes(currentUserData.nameChangedAt, DIAS_COOLDOWN_NOMBRE);
+        if (nameNote) {
+            nameNote.textContent = restantesNombre > 0
+                ? `Podrás volver a cambiar tu nombre en ${restantesNombre} día${restantesNombre === 1 ? '' : 's'}.`
+                : 'Puedes cambiar tu nombre una vez al mes.';
+        }
+        if (nameBtn) nameBtn.disabled = restantesNombre > 0;
+
+        const yaUsoSuCambio = !!currentUserData.usernameChanged;
+        if (userNote) {
+            userNote.innerHTML = yaUsoSuCambio
+                ? `Ya usaste tu único cambio de nombre de usuario. Para cambiarlo de nuevo, escribe a <a href="mailto:${SOPORTE_EMAIL}">soporte</a>.`
+                : 'Puedes cambiar tu nombre de usuario una sola vez en la vida de tu cuenta.';
+        }
+        if (userInput) userInput.disabled = yaUsoSuCambio;
+        if (userBtn) userBtn.disabled = yaUsoSuCambio;
+    }
+
+    async function handleChangeName() {
+        const input = document.getElementById('changeNameInput');
+        const nombre = input.value.trim();
+        if (!nombre) { alert('El nombre no puede estar vacío.'); return; }
+        const restantes = diasRestantes(currentUserData.nameChangedAt, DIAS_COOLDOWN_NOMBRE);
+        if (restantes > 0) {
+            alert(`Ya cambiaste tu nombre hace poco. Podrás volver a hacerlo en ${restantes} día${restantes === 1 ? '' : 's'}.`);
+            return;
+        }
+        try {
+            const ahora = Date.now();
+            await setDoc(doc(db, 'users', currentUser.uid), { name: nombre, nameChangedAt: ahora }, { merge: true });
+            currentUserData.name = nombre;
+            currentUserData.nameChangedAt = ahora;
+            loadUserData();
+            actualizarNotasCambioNombreUsuario();
+            alert('Tu nombre se actualizó correctamente.');
+        } catch (err) {
+            console.error('Error cambiando nombre:', err);
+            alert('No se pudo actualizar el nombre: ' + (err.code || err.message));
+        }
+    }
+
+    async function handleChangeUsername() {
+        if (currentUserData.usernameChanged) {
+            alert(`Ya usaste tu único cambio de nombre de usuario. Escribe a ${SOPORTE_EMAIL} para cambios adicionales.`);
+            return;
+        }
+        const input = document.getElementById('changeUsernameInput');
+        const nuevo = input.value.trim().toLowerCase();
+        const usernameRegex = /^[A-Za-z0-9_]+$/;
+        if (!nuevo || !usernameRegex.test(nuevo) || nuevo.length < 3) {
+            alert('El nombre de usuario debe tener al menos 3 caracteres: solo letras, números y guion bajo (_).');
+            return;
+        }
+        if (nuevo === currentUserData.username) {
+            alert('Ese ya es tu nombre de usuario actual.');
+            return;
+        }
+        try {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where('username', '==', nuevo));
+            const snap = await getDocs(q);
+            const tomado = !snap.empty && snap.docs.some(function(d) { return d.id !== currentUser.uid; });
+            if (tomado) {
+                alert('Ese nombre de usuario ya está en uso. Elige otro.');
+                return;
+            }
+            if (!confirm(`¿Seguro que quieres cambiar tu nombre de usuario a "${nuevo}"? Solo puedes hacerlo una vez, para cambios futuros tendrás que contactar a soporte.`)) return;
+
+            await setDoc(doc(db, 'users', currentUser.uid), { username: nuevo, usernameChanged: true }, { merge: true });
+            currentUserData.username = nuevo;
+            currentUserData.usernameChanged = true;
+            loadUserData();
+            actualizarNotasCambioNombreUsuario();
+            alert('Tu nombre de usuario se actualizó correctamente.');
+        } catch (err) {
+            console.error('Error cambiando username:', err);
+            alert('No se pudo actualizar el nombre de usuario: ' + (err.code || err.message));
+        }
+    }
+
+    function initCambioNombreUsuario() {
+        const nameInput = document.getElementById('changeNameInput');
+        const userInput = document.getElementById('changeUsernameInput');
+        if (nameInput && !nameInput._wired) {
+            nameInput._wired = true;
+            nameInput.addEventListener('focus', function() { this._focused = true; });
+            nameInput.addEventListener('blur', function() { this._focused = false; });
+        }
+        if (userInput && !userInput._wired) {
+            userInput._wired = true;
+            userInput.addEventListener('focus', function() { this._focused = true; });
+            userInput.addEventListener('blur', function() { this._focused = false; });
+        }
+        const nameBtn = document.getElementById('changeNameBtn');
+        if (nameBtn && !nameBtn._wired) {
+            nameBtn._wired = true;
+            nameBtn.addEventListener('click', handleChangeName);
+        }
+        const userBtn = document.getElementById('changeUsernameBtn');
+        if (userBtn && !userBtn._wired) {
+            userBtn._wired = true;
+            userBtn.addEventListener('click', handleChangeUsername);
+        }
+        actualizarNotasCambioNombreUsuario();
     }
 
     async function cargarNotifSettings() {
@@ -3338,11 +4058,15 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         buildAssistantUI();
         cargarNotifSettings();
         cargarApariencia();
+        cargarImagenesPerfil();
+        iniciarListenerNotificaciones();
         cargarUserStats().then(registrarEntrada);
         cargarChatsIA().then(renderUserStats);
         initChatUI();
         initMessagesTabs();
         initApariencia();
+        initEditorImagenesPerfil();
+        initCambioNombreUsuario();
         renderActivityTimeline();
 
         const headerSearchInput = document.getElementById('searchInput');

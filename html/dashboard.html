@@ -121,17 +121,22 @@
 
                 <div class="profile-banner" id="profileBanner">
                     <div class="profile-banner-overlay"></div>
+                    <button class="profile-banner-edit-btn owner-only-control" id="editBannerBtn" type="button" title="Cambiar banner"><i class="fas fa-camera"></i> Cambiar banner</button>
                 </div>
 
                 <div class="profile-top">
                     <div class="profile-avatar-xl">
                         <img src="../recourses/images/S/notfound.webp" alt="Avatar" id="profileAvatar" />
                         <span class="status-emoji-lg" id="statusEmoji">😊</span>
+                        <button class="profile-avatar-edit-btn owner-only-control" id="editAvatarBtn" type="button" title="Cambiar foto de perfil"><i class="fas fa-camera"></i></button>
                     </div>
 
                     <div class="profile-identity">
                         <h2 id="profileName">Usuario</h2>
                         <p class="profile-username" id="profileUsername">@usuario</p>
+                        <span class="profile-clase-actual-badge" id="profileClaseActualBadge" style="display:none;">
+                            <span class="clase-actual-dot"></span> <span id="profileClaseActualTexto"></span>
+                        </span>
                         <p class="profile-bio-line" id="profileBio">Aún no has agregado una descripción.</p>
                     </div>
 
@@ -210,34 +215,34 @@
                         <div id="friendsListEl"><p class="social-empty">Todavía no tienes amigos en común.</p></div>
                     </div>
                 </div>
-
-                <div class="profile-bio" id="socialSearchCard">
-                    <div class="bio-header"><i class="fas fa-user-plus"></i><h3>Buscar usuarios</h3></div>
-                    <div class="user-search-row">
-                        <input type="text" id="userSearchInput" placeholder="Buscar por nombre de usuario..." />
-                        <button class="btn btn-primary btn-sm" id="userSearchBtn"><i class="fas fa-search"></i></button>
-                    </div>
-                    <div id="userSearchResults"></div>
-                </div>
             </div>
         </section>
 
         <section id="section-mensajes" class="dashboard-section">
-            <div class="messages-top-tabs">
-                <button class="messages-top-tab active" data-mtab="conversaciones" type="button">
-                    <i class="fas fa-comment-dots"></i> Conversaciones
-                </button>
-                <button class="messages-top-tab" data-mtab="ia" type="button">
-                    <i class="fas fa-robot"></i> IA
-                </button>
-            </div>
-
             <div class="messages-container" id="messagesContainer">
                 <div class="messages-contacts" id="messagesPanelConversaciones">
                     <div class="messages-contacts-header">
-                        <h3><i class="fas fa-comment-dots"></i> Conversaciones</h3>
+                        <h3><i class="fas fa-comment-dots"></i> Mensajes</h3>
                     </div>
-                    <div id="chatContactsList" class="chat-contacts-list"></div>
+                    <div class="messages-contacts-tabs" id="messagesContactsTabs">
+                        <button class="messages-contacts-tab active" data-mtab="conversaciones" type="button"><i class="fas fa-comments"></i> Conversaciones</button>
+                        <button class="messages-contacts-tab" data-mtab="buscar" type="button"><i class="fas fa-user-plus"></i> Buscar personas</button>
+                    </div>
+                    <div class="messages-contacts-panel active" id="mcPanelConversaciones">
+                        <div class="chat-contacts-search">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="chatContactsSearchInput" placeholder="Buscar en tus contactos..." autocomplete="off" />
+                        </div>
+                        <div id="chatContactsList" class="chat-contacts-list"></div>
+                    </div>
+                    <div class="messages-contacts-panel" id="mcPanelBuscar">
+                        <p class="mc-buscar-hint">Busca por el nombre de usuario exacto (@usuario) de la persona que quieres seguir o contactar.</p>
+                        <div class="user-search-row">
+                            <input type="text" id="userSearchInput" placeholder="@nombre_de_usuario" />
+                            <button class="btn btn-primary btn-sm" id="userSearchBtn"><i class="fas fa-search"></i></button>
+                        </div>
+                        <div id="userSearchResults"></div>
+                    </div>
                 </div>
                 <div class="messages-chat">
                     <div id="chatEmptyState" class="chat-empty-state">
@@ -255,25 +260,8 @@
                     </div>
                 </div>
             </div>
-
-            <div class="messages-container messages-ia-container" id="messagesIaContainer" style="display:none;">
-                <div class="messages-contacts">
-                    <div class="messages-contacts-header">
-                        <h3><i class="fas fa-robot"></i> Chats con la IA</h3>
-                        <button class="btn btn-primary btn-sm" id="newAiChatFromMessagesBtn"><i class="fas fa-plus"></i></button>
-                    </div>
-                    <div id="aiChatsListMessages" class="chat-contacts-list">
-                        <p class="social-empty">Aún no has hablado con la IA.</p>
-                    </div>
-                </div>
-                <div class="messages-chat">
-                    <div class="chat-empty-state">
-                        <i class="fas fa-robot"></i>
-                        <p>Elige una conversación para abrirla en el asistente, o inicia una nueva.</p>
-                    </div>
-                </div>
-            </div>
         </section>
+
 
         <section id="section-clases" class="dashboard-section">
             <div class="classes-container">
@@ -397,23 +385,40 @@
                             <button class="accent-swatch" data-accent="#d81b60" style="background:#d81b60;" type="button" aria-label="Rosa"></button>
                             <button class="accent-swatch" data-accent="#2e7d32" style="background:#2e7d32;" type="button" aria-label="Verde"></button>
                             <button class="accent-swatch" data-accent="#e65100" style="background:#e65100;" type="button" aria-label="Naranja"></button>
+                            <button class="accent-swatch" data-accent="#00838f" style="background:#00838f;" type="button" aria-label="Turquesa"></button>
+                            <button class="accent-swatch" data-accent="#c62828" style="background:#c62828;" type="button" aria-label="Rojo"></button>
+                            <button class="accent-swatch" data-accent="#f9a825" style="background:#f9a825;" type="button" aria-label="Amarillo"></button>
+                            <button class="accent-swatch" data-accent="#4527a0" style="background:#4527a0;" type="button" aria-label="Índigo"></button>
+                            <button class="accent-swatch" data-accent="#ad1457" style="background:#ad1457;" type="button" aria-label="Fucsia"></button>
+                            <button class="accent-swatch" data-accent="#37474f" style="background:#37474f;" type="button" aria-label="Gris azulado"></button>
                         </div>
                     </div>
                     <div class="config-card">
-                        <h3><i class="fas fa-image"></i> Fondo</h3>
-                        <p>Cambia el fondo general de la app</p>
-                        <div class="bg-options" id="bgOptions">
-                            <button class="bg-swatch" data-bg="default" style="background:linear-gradient(135deg,#f5f7fa,#e8ecf1);" type="button" aria-label="Predeterminado"></button>
-                            <button class="bg-swatch" data-bg="azul" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);" type="button" aria-label="Azul suave"></button>
-                            <button class="bg-swatch" data-bg="calido" style="background:linear-gradient(135deg,#fff8e1,#ffe0b2);" type="button" aria-label="Cálido"></button>
-                            <button class="bg-swatch" data-bg="verde" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);" type="button" aria-label="Verde suave"></button>
-                            <button class="bg-swatch" data-bg="oscuro" style="background:linear-gradient(135deg,#0f151f,#1a2332);" type="button" aria-label="Oscuro"></button>
-                        </div>
+                        <h3><i class="fas fa-image"></i> Foto de perfil y banner</h3>
+                        <p>Elige y acomoda tu foto de perfil y el banner desde tu propio perfil.</p>
+                        <button class="btn btn-secondary" id="goToProfileAppearanceBtn"><i class="fas fa-user"></i> Ir a mi perfil</button>
                     </div>
                 </div>
 
+
                 <h3 class="config-subheading"><i class="fas fa-shield-halved"></i> Cuenta</h3>
                 <div class="config-grid">
+                    <div class="config-card">
+                        <h3><i class="fas fa-id-badge"></i> Perfil</h3>
+                        <p>Cambia tu nombre o tu nombre de usuario.</p>
+                        <div class="form-group">
+                            <label>Nombre</label>
+                            <input type="text" id="changeNameInput" placeholder="Tu nombre" />
+                            <div id="changeNameNote" class="config-note"></div>
+                        </div>
+                        <button class="btn btn-secondary" id="changeNameBtn">Guardar nombre</button>
+                        <div class="form-group" style="margin-top:1rem;">
+                            <label>Nombre de usuario</label>
+                            <input type="text" id="changeUsernameInput" placeholder="tu_usuario" />
+                            <div id="changeUsernameNote" class="config-note"></div>
+                        </div>
+                        <button class="btn btn-secondary" id="changeUsernameBtn">Guardar usuario</button>
+                    </div>
                     <div class="config-card"><h3><i class="fas fa-user-shield"></i> Seguridad</h3><p>Gestiona la seguridad de tu cuenta</p><button class="btn btn-secondary" id="changePasswordBtn">Cambiar contraseña</button></div>
                     <div class="config-card"><h3><i class="fas fa-bell"></i> Notificaciones</h3><p>Configura tus preferencias de notificación</p><button class="btn btn-secondary" id="manageNotifBtn">Gestionar</button></div>
                     <div class="config-card"><h3><i class="fas fa-database"></i> Datos</h3><p>Exporta o elimina tus datos</p><button class="btn btn-secondary" id="exportDataBtn">Exportar datos</button></div>
