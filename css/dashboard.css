@@ -1877,6 +1877,12 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 1.2rem;
+    /* Por defecto, el grid estira todas las tarjetas de una misma fila a
+       la altura de la más alta (la de "Perfil", con formulario). Las
+       demás (Seguridad, Notificaciones, Datos) solo tienen un enlace y
+       quedaban con un montón de espacio vacío abajo. Con "start" cada
+       tarjeta ocupa solo el alto de su propio contenido. */
+    align-items: start;
 }
 
 .config-card {
@@ -3350,10 +3356,17 @@ body {
 
 html[data-tema="oscuro"] {
     --bg-main: linear-gradient(135deg, #0c1119 0%, #131b28 100%);
-    --card-bg: rgba(30, 38, 51, 0.75);
+    --card-bg: rgba(30, 38, 51, 0.85);
     --text-primary: #eef2f7;
     --text-secondary: #a6b3c4;
-    --border-color: rgba(255, 255, 255, 0.08);
+    --border-color: rgba(255, 255, 255, 0.1);
+    /* --primary/--accent-user siguen igual (#1a2332): se usan también como
+       FONDO de botones y avatares con texto blanco encima, y ahí sí se ven
+       bien en cualquier tema. El problema real era que unos pocos lugares
+       los usaban como color de TEXTO/ÍCONO — esos se corrigen abajo con
+       --fg-accent, una variante clara pensada solo para texto/íconos sobre
+       fondo oscuro. */
+    --fg-accent: #8fb4ff;
 }
 
 html[data-tema="oscuro"] body { background: var(--bg-main); color: var(--text-primary); }
@@ -3389,6 +3402,46 @@ html[data-tema="oscuro"] select {
 html[data-tema="oscuro"] input::placeholder,
 html[data-tema="oscuro"] textarea::placeholder {
     color: rgba(238, 242, 247, 0.4);
+}
+
+/* ---- Textos/íconos que usaban --primary (casi negro) como color de
+   letra: en modo claro se leían bien sobre las tarjetas claras, pero en
+   oscuro quedaban casi negros sobre fondo casi negro (ej: ícono de la
+   cámara en "Proyectos", pestaña activa de notificaciones). Se usa
+   --fg-accent, una variante clara, solo para estos casos puntuales. ---- */
+html[data-tema="oscuro"] .notif-tab.active,
+html[data-tema="oscuro"] .notif-tab.active::after,
+html[data-tema="oscuro"] .notif-mark-all,
+html[data-tema="oscuro"] .view-all,
+html[data-tema="oscuro"] .project-card .project-icon,
+html[data-tema="oscuro"] .profile-back-btn:hover,
+html[data-tema="oscuro"] .assistant-history-item.active {
+    color: var(--fg-accent);
+}
+html[data-tema="oscuro"] .notif-tab.active::after {
+    background: var(--fg-accent);
+}
+
+/* ---- El dropdown de notificaciones flota sobre cualquier sección del
+   panel; con la transparencia normal de las tarjetas se veía "calado"
+   (se distinguía lo que había detrás y costaba leer). Aquí se le sube
+   la opacidad solo a él para que siempre sea legible. ---- */
+html[data-tema="oscuro"] .notif-dropdown {
+    background: rgba(19, 24, 35, 0.97);
+}
+html[data-tema="oscuro"] .notif-tabs,
+html[data-tema="oscuro"] .notif-header {
+    background: rgba(255, 255, 255, 0.03);
+}
+html[data-tema="oscuro"] .notif-tab:hover,
+html[data-tema="oscuro"] .notif-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+html[data-tema="oscuro"] .notif-item.unread {
+    background: rgba(143, 180, 255, 0.08);
+}
+html[data-tema="oscuro"] .notif-item.notif-clickable:hover {
+    background: rgba(143, 180, 255, 0.12);
 }
 
 /* ---- Horario en modo oscuro ----
@@ -3430,6 +3483,38 @@ html[data-tema="oscuro"] .class-cell:hover {
 
 html[data-tema="oscuro"] .class-cell .class-time {
     color: var(--text-secondary);
+}
+
+/* ---- Mensajes en modo oscuro ----
+   Las pestañas y contactos usaban overlays negros para marcar hover/activo
+   (pensados para tarjetas claras); sobre fondo ya oscuro no se notaban y
+   por eso costaba distinguir qué estaba seleccionado. También el buscador
+   de contactos y el avatar-inicial de cada contacto quedaban con poco
+   contraste. Aquí se separan claramente las zonas y se usan overlays
+   claros para hover/activo. */
+html[data-tema="oscuro"] .messages-contacts-tab:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+html[data-tema="oscuro"] .messages-contacts-tab.active {
+    color: var(--fg-accent);
+    border-bottom-color: var(--fg-accent);
+    background: rgba(255, 255, 255, 0.03);
+}
+html[data-tema="oscuro"] .chat-contacts-search {
+    background: rgba(255, 255, 255, 0.04);
+}
+html[data-tema="oscuro"] .chat-contact-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+html[data-tema="oscuro"] .chat-contact-item.active {
+    background: rgba(143, 180, 255, 0.14);
+}
+html[data-tema="oscuro"] .chat-contact-avatar {
+    background: linear-gradient(135deg, #3d5a8a 0%, #5b7fb5 100%);
+}
+html[data-tema="oscuro"] .messages-chat,
+html[data-tema="oscuro"] .messages-contacts {
+    border-color: var(--border-color);
 }
 
 /* ---- Header avatar como botón ---- */
@@ -3542,6 +3627,21 @@ html[data-tema="oscuro"] .class-cell .class-time {
     gap: 1.2rem;
     padding: 0.5rem 1.5rem 0;
     flex-wrap: wrap;
+    position: relative;
+    z-index: 1;
+}
+
+.profile-actions {
+    /* Antes quedaba pegado a la identidad y, al envolver, terminaba
+       montado sobre el avatar/nombre en vez de quedar como una acción
+       aparte a la derecha. */
+    margin-left: auto;
+    align-self: center;
+    flex-shrink: 0;
+}
+
+.profile-view {
+    scroll-margin-top: calc(var(--header-height) + 32px);
 }
 
 .profile-avatar-xl {

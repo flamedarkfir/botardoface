@@ -2641,6 +2641,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const postsArr = [];
             if (postsSnap.exists()) postsSnap.forEach(function(c) { postsArr.push(c.val()); });
             renderPostsGridGeneric(ordenarPosts(postsArr), false);
+            const postCountEl = document.getElementById('postCount');
+            if (postCountEl) postCountEl.textContent = postsArr.length;
 
             const clasesArr = [];
             if (clasesSnap.exists()) clasesSnap.forEach(function(c) { clasesArr.push(c.val()); });
