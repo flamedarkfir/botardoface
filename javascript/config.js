@@ -9,7 +9,45 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     let posts = [];
     let bioText = 'Aún no has agregado una descripción.';
-    let statusEmoji = '😊';
+    // '😶' = "sin reacción": el emoji por defecto hasta que la persona
+    // gire la ruleta al menos una vez. No es un premio posible de la
+    // ruleta, así que siempre se nota que todavía no ha girado.
+    let statusEmoji = '😶';
+    const EMOJI_SIN_REACCION = '😶';
+
+    // Ruleta de emoji: entre más abajo en la lista, más raro (y más
+    // "exclusiva" hace ver la cuenta). El primero tiene ~70% de
+    // probabilidad; el resto va bajando cada vez más fuerte.
+    const EMOJIS_RULETA = [
+        { emoji: '😊', peso: 70 },
+        { emoji: '😂', peso: 11 },
+        { emoji: '😒', peso: 6 },
+        { emoji: '😎', peso: 3.8 },
+        { emoji: '😜', peso: 2.5 },
+        { emoji: '🚗', peso: 1.7 },
+        { emoji: '🚓', peso: 1.15 },
+        { emoji: '✈️', peso: 0.8 },
+        { emoji: '🪂', peso: 0.55 },
+        { emoji: '🛩️', peso: 0.38 },
+        { emoji: '🚀', peso: 0.27 },
+        { emoji: '🛸', peso: 0.19 },
+        { emoji: '🌅', peso: 0.14 },
+        { emoji: '🌄', peso: 0.1 },
+        { emoji: '🌆', peso: 0.075 },
+        { emoji: '🌤️', peso: 0.056 },
+        { emoji: '🌦️', peso: 0.042 },
+        { emoji: '🌥️', peso: 0.032 },
+        { emoji: '❄️', peso: 0.024 },
+        { emoji: '🔥', peso: 0.018 },
+        { emoji: '⛱️', peso: 0.013 },
+        { emoji: '🌊', peso: 0.01 },
+        { emoji: '🎈', peso: 0.008 },
+        { emoji: '🧨', peso: 0.006 },
+        { emoji: '✨', peso: 0.005 }
+    ];
+
+    const MAX_GIROS_EMOJI_POR_DIA = 3;
+    let emojiGiroUsage = { fecha: '', cantidad: 0 };
     let clases = [];
     let followingSet = new Set();
     let followersSet = new Set();
@@ -878,9 +916,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 return;
             }
 
+            const imagenes = (data.item.album && data.item.album.images) || [];
             await set(miNowPlayingRef, {
                 cancion: data.item.name,
                 artista: (data.item.artists || []).map(function(a) { return a.name; }).join(', '),
+                imagen: imagenes.length ? imagenes[imagenes.length - 1].url : null,
+                progresoMs: data.progress_ms || 0,
+                duracionMs: data.item.duration_ms || 0,
                 actualizadoEn: Date.now()
             });
             // Antes se borraba automáticamente apenas cerrabas la pestaña
@@ -917,19 +959,78 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         return `hace ${dias} d`;
     }
 
+    function formatoMinutosSegundos(ms) {
+        const totalSeg = Math.max(0, Math.floor(ms / 1000));
+        const min = Math.floor(totalSeg / 60);
+        const seg = totalSeg % 60;
+        return min + ':' + String(seg).padStart(2, '0');
+    }
+
+    let spotifyProgressTicker = null;
+
+    // El disco de vinilo y la barrita de progreso solo se muestran
+    // mientras la canción se considera "en vivo" (esReciente); si no,
+    // se quedan quietos para no aparentar que sigue sonando.
+    function actualizarProgresoSpotify(data, esReciente) {
+        const wrap = document.getElementById('spotifyProgressWrap');
+        const fill = document.getElementById('spotifyProgressFill');
+        const actualEl = document.getElementById('spotifyProgressCurrent');
+        const totalEl = document.getElementById('spotifyProgressTotal');
+        if (!wrap || !fill || !actualEl || !totalEl) return;
+
+        if (!data || !data.duracionMs || !esReciente) {
+            wrap.style.display = 'none';
+            return;
+        }
+
+        const transcurridoDesdeUpdate = Date.now() - (data.actualizadoEn || 0);
+        const progresoEstimado = Math.min(data.duracionMs, (data.progresoMs || 0) + transcurridoDesdeUpdate);
+        const pct = Math.min(100, (progresoEstimado / data.duracionMs) * 100);
+
+        wrap.style.display = 'flex';
+        fill.style.width = pct + '%';
+        actualEl.textContent = formatoMinutosSegundos(progresoEstimado);
+        totalEl.textContent = formatoMinutosSegundos(data.duracionMs);
+    }
+
     function pintarSpotifyNowPlaying(data) {
         const bloque = document.getElementById('profileSpotifyNow');
         const texto = document.getElementById('profileSpotifyNowText');
+        const vinilo = document.getElementById('spotifyVinyl');
+        const viniloArt = document.getElementById('spotifyVinylArt');
         if (!bloque || !texto) return;
+
+        if (spotifyProgressTicker) {
+            clearInterval(spotifyProgressTicker);
+            spotifyProgressTicker = null;
+        }
+
         if (data && data.cancion) {
             const transcurrido = Date.now() - (data.actualizadoEn || 0);
             const esReciente = transcurrido < SPOTIFY_NOW_PLAYING_LIVE_MS;
             const cancionTexto = data.cancion + (data.artista ? ' — ' + data.artista : '');
             texto.textContent = esReciente ? cancionTexto : (cancionTexto + ' · ' + formatoTiempoTranscurrido(transcurrido));
             bloque.classList.toggle('spotify-now-desactualizado', !esReciente);
+            // position:absolute (overlay): aparece/desaparece sin mover
+            // nada del resto del perfil, ni vertical ni horizontalmente.
             bloque.style.display = 'flex';
+
+            // El disco solo gira cuando de verdad está sonando algo
+            // ahora mismo, y va por encima del avatar (no ocupa espacio).
+            if (vinilo) {
+                vinilo.classList.toggle('is-playing', esReciente);
+                if (viniloArt) viniloArt.src = (esReciente && data.imagen) ? data.imagen : '';
+            }
+
+            actualizarProgresoSpotify(data, esReciente);
+            if (esReciente && data.duracionMs) {
+                spotifyProgressTicker = setInterval(function() { actualizarProgresoSpotify(data, true); }, 1000);
+            }
         } else {
             bloque.style.display = 'none';
+            if (vinilo) vinilo.classList.remove('is-playing');
+            const wrap = document.getElementById('spotifyProgressWrap');
+            if (wrap) wrap.style.display = 'none';
         }
     }
 
@@ -1240,6 +1341,59 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     function actualizarEmoji() {
         const emojiEl = document.getElementById('statusEmoji');
         if (emojiEl) emojiEl.textContent = statusEmoji;
+        aplicarAnimEntradaPerfilPorEmoji(statusEmoji);
+    }
+
+    // Índice de rareza dentro de la ruleta (0 = el más común). El emoji
+    // por defecto ("sin reacción") no cuenta como premio, así que no
+    // tiene tier especial.
+    function indiceRarezaEmoji(emoji) {
+        return EMOJIS_RULETA.findIndex(function(e) { return e.emoji === emoji; });
+    }
+
+    // Traduce la posición en la ruleta a uno de 5 "tiers" visuales: entre
+    // más raro salió el emoji, más llamativo el aro alrededor del avatar.
+    function tierVisualEmoji(emoji) {
+        const idx = indiceRarezaEmoji(emoji);
+        if (idx < 0) return 0;
+        if (idx <= 1) return 1;
+        if (idx <= 4) return 2;
+        if (idx <= 9) return 3;
+        if (idx <= 16) return 4;
+        return 5;
+    }
+
+    // Se llama cada vez que se entra a un perfil (el propio o el de
+    // alguien más) para que la anim del aro de rareza se vuelva a
+    // reproducir, no solo la primera vez que se gira el emoji.
+    function aplicarAnimEntradaPerfilPorEmoji(emoji) {
+        const avatarBox = document.getElementById('profileAvatarXl');
+        if (!avatarBox) return;
+        for (let t = 1; t <= 5; t++) avatarBox.classList.remove('avatar-tier-' + t);
+        const tier = tierVisualEmoji(emoji);
+        if (tier > 0) avatarBox.classList.add('avatar-tier-' + tier);
+        avatarBox.classList.remove('emoji-reveal-anim');
+        // Forzar reflow para poder volver a disparar la animación aunque
+        // sea el mismo tier que ya tenía.
+        void avatarBox.offsetWidth;
+        avatarBox.classList.add('emoji-reveal-anim');
+    }
+
+    // Elige un emoji al azar respetando los pesos (el primero de la
+    // lista tiene ~70% de probabilidad, y va bajando fuerte desde ahí).
+    function girarRuletaEmoji() {
+        const pesoTotal = EMOJIS_RULETA.reduce(function(acc, e) { return acc + e.peso; }, 0);
+        let punto = Math.random() * pesoTotal;
+        for (let i = 0; i < EMOJIS_RULETA.length; i++) {
+            punto -= EMOJIS_RULETA[i].peso;
+            if (punto <= 0) return EMOJIS_RULETA[i].emoji;
+        }
+        return EMOJIS_RULETA[0].emoji;
+    }
+
+    function girosEmojiDisponiblesHoy() {
+        if (emojiGiroUsage.fecha !== getTodayString()) return MAX_GIROS_EMOJI_POR_DIA;
+        return Math.max(0, MAX_GIROS_EMOJI_POR_DIA - emojiGiroUsage.cantidad);
     }
 
     async function cargarPosts() {
@@ -1326,10 +1480,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 const val = snap.val();
                 if (val.bio) bioText = val.bio;
                 if (val.emoji) statusEmoji = val.emoji;
+                if (val.giroEmoji) {
+                    emojiGiroUsage = { fecha: val.giroEmoji.fecha || '', cantidad: val.giroEmoji.cantidad || 0 };
+                }
             }
         } catch (err) {
             console.error('Error cargando perfil:', err);
         }
+        if (emojiGiroUsage.fecha !== getTodayString()) emojiGiroUsage = { fecha: getTodayString(), cantidad: 0 };
         actualizarBio();
         actualizarEmoji();
         await cargarPosts();
@@ -1346,7 +1504,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     async function guardarEmoji() {
         try {
-            await update(ref(rtdb, 'users/' + currentUser.uid + '/perfil'), { emoji: statusEmoji });
+            await update(ref(rtdb, 'users/' + currentUser.uid + '/perfil'), { emoji: statusEmoji, giroEmoji: emojiGiroUsage });
         } catch (err) {
             console.error('Error guardando emoji:', err);
         }
@@ -1390,12 +1548,38 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         if (emojiEl) {
             emojiEl.addEventListener('click', function() {
                 if (viewingProfileUid) return;
-                const emojis = ['😊', '😎', '🤓', '🔥', '💪', '🌟', '🚀', '💡', '🎯', '✨', '😄', '🤩', '👨‍💻', '👩‍💻', '🧠'];
-                const current = emojis.indexOf(statusEmoji);
-                const next = (current + 1) % emojis.length;
-                statusEmoji = emojis[next];
-                guardarEmoji();
-                actualizarEmoji();
+                if (emojiEl.classList.contains('spinning')) return;
+
+                const disponibles = girosEmojiDisponiblesHoy();
+                if (disponibles <= 0) {
+                    alert('Ya usaste tus ' + MAX_GIROS_EMOJI_POR_DIA + ' giros de hoy. Vuelve mañana para intentar de nuevo.');
+                    return;
+                }
+
+                const confirmado = confirm(
+                    '¿Estás seguro de girar? (Te quedan ' + disponibles + ' de ' + MAX_GIROS_EMOJI_POR_DIA + ' giros hoy)\n\n' +
+                    'Es cuestión de suerte: puede salir un emoji peor o uno mucho más exclusivo. Nadie sabe qué va a salir.'
+                );
+                if (!confirmado) return;
+
+                if (emojiGiroUsage.fecha !== getTodayString()) emojiGiroUsage = { fecha: getTodayString(), cantidad: 0 };
+                emojiGiroUsage.cantidad += 1;
+
+                // Efecto de "ruleta girando" antes de mostrar el resultado.
+                emojiEl.classList.add('spinning');
+                const emojisVisuales = EMOJIS_RULETA.map(function(e) { return e.emoji; });
+                let vueltas = 0;
+                const spinTimer = setInterval(function() {
+                    emojiEl.textContent = emojisVisuales[Math.floor(Math.random() * emojisVisuales.length)];
+                    vueltas++;
+                    if (vueltas >= 14) {
+                        clearInterval(spinTimer);
+                        emojiEl.classList.remove('spinning');
+                        statusEmoji = girarRuletaEmoji();
+                        guardarEmoji();
+                        actualizarEmoji();
+                    }
+                }, 90);
             });
         }
 
@@ -3438,7 +3622,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const perfil = perfilSnap.exists() ? perfilSnap.val() : {};
             document.getElementById('profileBio').textContent = perfil.bio || 'Sin descripción.';
             const emojiEl = document.getElementById('statusEmoji');
-            if (emojiEl) emojiEl.textContent = perfil.emoji || '😊';
+            if (emojiEl) emojiEl.textContent = perfil.emoji || EMOJI_SIN_REACCION;
+            aplicarAnimEntradaPerfilPorEmoji(perfil.emoji || EMOJI_SIN_REACCION);
             aplicarAccentPerfilView(perfil.acento);
             aplicarBannerPerfilView(perfil.banner);
             aplicarAvatarPerfilView(perfil.avatar);
@@ -3593,7 +3778,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         texto += `Nombre: ${(currentUserData && currentUserData.name) || 'Sin nombre'}.\n`;
         texto += `Usuario: @${(currentUserData && currentUserData.username) || 'sin_usuario'}.\n`;
         texto += `Descripción (bio): ${bioText || 'Sin descripción.'}\n`;
-        texto += `Emoji de estado: ${statusEmoji || '😊'}.\n`;
+        texto += `Emoji de estado: ${statusEmoji || EMOJI_SIN_REACCION}.\n`;
         texto += `Plan: ${(currentUserData && currentUserData.premium) ? 'Premium' : 'Gratis'}.\n`;
         texto += `Notas publicadas: ${posts.length}.\n`;
         if (posts.length > 0) {

@@ -3665,13 +3665,33 @@ html[data-tema="oscuro"] .messages-contacts {
     letter-spacing: 0.5px;
 }
 
+/* Overlay: se posiciona por fuera del flujo normal (position:absolute)
+   para que aparecer/desaparecer NUNCA mueva nada a su alrededor, ni en
+   vertical ni en horizontal. Solo "se ve" flotando sobre el perfil. */
 .profile-spotify-now {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    color: #1db954;
+    position: absolute;
+    top: -2.4rem;
+    right: 0.5rem;
+    z-index: 6;
+    pointer-events: none;
+    animation: spotifyOverlayIn 0.35s ease;
+}
+
+.spotify-now-row {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.8rem;
-    color: #1db954;
-    margin-top: 0.3rem;
+}
+
+@keyframes spotifyOverlayIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .profile-spotify-connect {
@@ -3774,6 +3794,72 @@ html[data-tema="oscuro"] .messages-contacts {
     object-fit: cover;
 }
 
+/* Disco de vinilo: solo se muestra (clase .is-playing) mientras suena
+   música. Va por encima del perfil, alrededor del avatar, sin ocupar
+   espacio propio ni mover nada del layout (position:absolute). */
+.spotify-vinyl {
+    position: absolute;
+    inset: -14px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    pointer-events: none;
+}
+
+.spotify-vinyl.is-playing {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.spotify-vinyl-disc {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    position: relative;
+    background: repeating-radial-gradient(circle at center, #0b0b0b 0 3px, #262626 3px 6px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+    animation: vinylSpin 3.6s linear infinite;
+    animation-play-state: paused;
+}
+
+.spotify-vinyl.is-playing .spotify-vinyl-disc {
+    animation-play-state: running;
+}
+
+.spotify-vinyl-disc img {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44%;
+    height: 44%;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,0.9);
+}
+
+.spotify-vinyl-disc::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    background: var(--card-bg, #fff);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+}
+
+@keyframes vinylSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .profile-avatar-edit-btn {
     position: absolute;
     bottom: -2px;
@@ -3796,10 +3882,16 @@ html[data-tema="oscuro"] .messages-contacts {
     filter: brightness(1.1);
 }
 
+/* Antes quedaba en la misma esquina que el botón de "Cambiar foto de
+   perfil" (ambos abajo a la derecha), y ese botón, al tener z-index
+   más alto, se comía los clics del emoji. Ahora va arriba a la
+   izquierda, en su propia esquina, y con su propio z-index para que
+   siempre se pueda tocar/girar sin que nada lo tape. */
 .status-emoji-lg {
     position: absolute;
-    bottom: 2px;
-    right: 2px;
+    top: -4px;
+    left: -4px;
+    z-index: 3;
     background: var(--card-bg);
     border-radius: 50%;
     width: 30px;
@@ -3810,6 +3902,86 @@ html[data-tema="oscuro"] .messages-contacts {
     font-size: 1rem;
     border: 2px solid #fff;
     cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    transition: transform 0.2s ease;
+}
+
+.status-emoji-lg:hover {
+    transform: scale(1.12);
+}
+
+/* Anillos de rareza alrededor del avatar según el emoji obtenido en la
+   ruleta: entre más raro el resultado, más "exclusivo" se ve el aro. */
+.profile-avatar-xl.avatar-tier-1::before,
+.profile-avatar-xl.avatar-tier-2::before,
+.profile-avatar-xl.avatar-tier-3::before,
+.profile-avatar-xl.avatar-tier-4::before,
+.profile-avatar-xl.avatar-tier-5::before {
+    content: '';
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.profile-avatar-xl.avatar-tier-2::before {
+    border: 2px solid #7dd3fc;
+    opacity: 0.85;
+}
+
+.profile-avatar-xl.avatar-tier-3::before {
+    border: 2px solid #a78bfa;
+    box-shadow: 0 0 10px rgba(167, 139, 250, 0.6);
+    animation: avatarTierPulse 2.2s ease-in-out infinite;
+}
+
+.profile-avatar-xl.avatar-tier-4::before {
+    border: 2px solid #fbbf24;
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.75);
+    animation: avatarTierPulse 1.8s ease-in-out infinite;
+}
+
+.profile-avatar-xl.avatar-tier-5::before {
+    border: 3px solid transparent;
+    background: linear-gradient(var(--card-bg), var(--card-bg)) padding-box,
+                linear-gradient(135deg, #f43f5e, #fbbf24, #22d3ee, #a78bfa) border-box;
+    box-shadow: 0 0 22px rgba(244, 63, 94, 0.55);
+    animation: avatarTierPulse 1.4s ease-in-out infinite, avatarTierHue 4s linear infinite;
+}
+
+@keyframes avatarTierPulse {
+    0%, 100% { transform: scale(1); opacity: 0.85; }
+    50% { transform: scale(1.07); opacity: 1; }
+}
+
+@keyframes avatarTierHue {
+    from { filter: hue-rotate(0deg); }
+    to { filter: hue-rotate(360deg); }
+}
+
+/* Se agrega un instante cada vez que entras a un perfil (el tuyo o el
+   de alguien más) para que el resultado del emoji "se sienta" cada
+   vez, no solo la primera vez que lo giras. */
+.profile-avatar-xl.emoji-reveal-anim {
+    animation: avatarRevealPop 0.55s ease;
+}
+
+@keyframes avatarRevealPop {
+    0% { transform: scale(0.88); }
+    55% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+}
+
+/* La ruleta de emoji gira rápido antes de mostrar el resultado. */
+.status-emoji-lg.spinning {
+    animation: emojiSpinning 0.12s linear infinite;
+}
+
+@keyframes emojiSpinning {
+    0% { transform: scale(1) rotate(0deg); }
+    50% { transform: scale(1.2) rotate(180deg); }
+    100% { transform: scale(1) rotate(360deg); }
 }
 
 .profile-identity {
@@ -4479,13 +4651,48 @@ html[data-tema="oscuro"] .app-loader-spinner {
 }
 
 .profile-spotify-now {
-    background: rgba(29, 185, 84, 0.1);
-    border: 1px solid rgba(29, 185, 84, 0.25);
-    border-radius: 999px;
-    padding: 0.3rem 0.7rem;
+    background: rgba(29, 185, 84, 0.12);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(29, 185, 84, 0.3);
+    border-radius: 16px;
+    padding: 0.35rem 0.7rem;
     width: fit-content;
-    max-width: 100%;
+    max-width: 260px;
     box-sizing: border-box;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    pointer-events: auto;
+}
+
+.spotify-progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    font-size: 0.65rem;
+}
+
+.spotify-progress-bar {
+    flex: 1;
+    height: 4px;
+    min-width: 60px;
+    border-radius: 999px;
+    background: rgba(29, 185, 84, 0.2);
+    overflow: hidden;
+}
+
+.spotify-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #1db954;
+    border-radius: 999px;
+    transition: width 0.9s linear;
+}
+
+.spotify-progress-time {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+    min-width: 1.8em;
+    text-align: center;
 }
 
 .profile-spotify-now.spotify-now-desactualizado {
