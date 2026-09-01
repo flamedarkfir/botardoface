@@ -541,6 +541,17 @@ body {
 .user-name {
     font-size: 0.85rem;
     font-weight: 600;
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .user-name {
+        max-width: 90px;
+    }
 }
 
 .user-role {
@@ -3621,6 +3632,70 @@ html[data-tema="oscuro"] .messages-contacts {
     display: flex;
 }
 
+.profile-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.35rem 0;
+}
+
+.profile-meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.25rem 0.65rem;
+    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-secondary);
+}
+
+.profile-owner-id-row {
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.4rem;
+}
+
+.profile-owner-id-value {
+    font-family: monospace;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.profile-spotify-now {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #1db954;
+    margin-top: 0.3rem;
+}
+
+.profile-spotify-connect {
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+}
+
+.config-card-spotify {
+    border-color: rgba(29, 185, 84, 0.3);
+}
+
+.config-card-spotify h3 i {
+    color: #1db954;
+}
+
+.config-card-spotify .profile-spotify-connect {
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: 0;
+    font-size: 0.85rem;
+}
+
 .profile-top {
     display: flex;
     align-items: flex-end;
@@ -4172,4 +4247,250 @@ html[data-tema="oscuro"] .messages-contacts {
     .account-activity-grid { grid-template-columns: 1fr 1fr; }
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .theme-option { padding: 0.45rem 0.7rem; font-size: 0.74rem; }
+}
+/* =========================================================
+   PANTALLA DE CARGA (App Loader)
+   Se muestra mientras se verifica la sesión y se cargan los
+   datos del usuario, para no dejar ver el dashboard "vacío"
+   (username en blanco, avatar por defecto, etc.) mientras
+   Firebase todavía está resolviendo todo.
+   ========================================================= */
+.app-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-main);
+    transition: opacity 0.45s ease, visibility 0.45s ease;
+}
+
+.app-loader.app-loader-hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.app-loader-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 2.2rem 2.4rem;
+    background: var(--card-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    min-width: 280px;
+    text-align: center;
+}
+
+.app-loader-logo {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    object-fit: cover;
+}
+
+.app-loader-spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgba(0, 0, 0, 0.08);
+    border-top-color: var(--accent-user, var(--primary));
+    animation: appLoaderSpin 0.85s linear infinite;
+}
+
+@keyframes appLoaderSpin {
+    to { transform: rotate(360deg); }
+}
+
+.app-loader-text {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.app-loader-steps {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    width: 100%;
+    text-align: left;
+    margin-top: 0.3rem;
+}
+
+.app-loader-steps li {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    transition: color 0.25s ease;
+}
+
+.app-loader-steps li i {
+    font-size: 0.55rem;
+    width: 14px;
+    text-align: center;
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.app-loader-steps li.done {
+    color: var(--text-primary);
+}
+
+.app-loader-steps li.done i {
+    color: #2e7d32;
+    opacity: 1;
+}
+
+.app-loader-steps li.active {
+    color: var(--accent-user, var(--primary));
+    font-weight: 600;
+}
+
+.app-loader-steps li.active i {
+    color: var(--accent-user, var(--primary));
+    opacity: 1;
+}
+
+html[data-tema="oscuro"] .app-loader-spinner {
+    border-color: rgba(255, 255, 255, 0.12);
+    border-top-color: var(--accent-user, #6d8bff);
+}
+
+/* =========================================================
+   COLEGIO Y GRADO (campos de texto libres)
+   ========================================================= */
+.school-grade-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    line-height: 1.45;
+}
+
+.school-grade-form .form-group {
+    margin-bottom: 1rem;
+}
+
+.panel-card-body .form-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+    color: var(--text-primary);
+}
+
+.panel-card-body .form-group label i {
+    color: var(--accent-user, var(--primary));
+    font-size: 0.85em;
+}
+
+.panel-card-body .form-group input[type="text"] {
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    font-size: 0.9rem;
+    outline: none;
+    background: rgba(0, 0, 0, 0.02);
+    color: var(--text-primary);
+    transition: var(--transition);
+}
+
+.panel-card-body .form-group input[type="text"]:focus {
+    border-color: var(--accent-user, var(--primary));
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+}
+
+.panel-card-body .form-group input[type="text"]:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.school-grade-form .btn {
+    margin-top: 0.3rem;
+}
+
+/* =========================================================
+   SPOTIFY
+   ========================================================= */
+.btn-spotify {
+    background: #1db954;
+    color: #fff;
+    border: none;
+}
+
+.btn-spotify:hover {
+    background: #1ed760;
+}
+
+.spotify-connected-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: #1db954;
+    font-weight: 600;
+}
+
+.profile-spotify-now {
+    background: rgba(29, 185, 84, 0.1);
+    border: 1px solid rgba(29, 185, 84, 0.25);
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    width: fit-content;
+}
+
+.spotify-eq {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 11px;
+}
+
+.spotify-eq span {
+    width: 3px;
+    background: #1db954;
+    border-radius: 2px;
+    animation: spotifyEq 0.9s ease-in-out infinite;
+}
+
+.spotify-eq span:nth-child(1) { height: 40%; animation-delay: -0.6s; }
+.spotify-eq span:nth-child(2) { height: 100%; animation-delay: -0.3s; }
+.spotify-eq span:nth-child(3) { height: 65%; animation-delay: 0s; }
+
+@keyframes spotifyEq {
+    0%, 100% { transform: scaleY(0.4); }
+    50% { transform: scaleY(1); }
+}
+
+/* Ventana emergente de conexión: pequeño mensaje que se ve
+   dentro del popup mientras se conecta la cuenta de Spotify. */
+.spotify-popup-message {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.8rem;
+    background: #121212;
+    color: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+    text-align: center;
+    padding: 1.5rem;
+}
+
+.spotify-popup-message i {
+    font-size: 2.2rem;
+    color: #1db954;
 }

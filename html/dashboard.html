@@ -9,6 +9,20 @@
 </head>
 <body>
 
+    <div class="app-loader" id="appLoader">
+        <div class="app-loader-card">
+            <img src="../recourses/images/P/logo.webp" alt="Botardo Face" class="app-loader-logo" />
+            <div class="app-loader-spinner" aria-hidden="true"></div>
+            <p class="app-loader-text" id="appLoaderText">Verificando tu sesión...</p>
+            <ul class="app-loader-steps" id="appLoaderSteps">
+                <li data-step="auth" class="active"><i class="fas fa-circle-notch fa-spin"></i> Verificando sesión</li>
+                <li data-step="datos"><i class="fas fa-circle"></i> Cargando tus datos</li>
+                <li data-step="perfil"><i class="fas fa-circle"></i> Preparando tu perfil</li>
+                <li data-step="listo"><i class="fas fa-circle"></i> Dejando todo listo</li>
+            </ul>
+        </div>
+    </div>
+
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
             <img src="../recourses/images/P/logo.webp" alt="Botardo Face" />
@@ -20,7 +34,7 @@
                 <li><a href="#perfil" data-section="perfil"><i class="fas fa-user"></i><span>Perfil</span></a></li>
                 <li><a href="#mensajes" data-section="mensajes"><i class="fas fa-comment-dots"></i><span>Mensajes</span></a></li>
                 <li><a href="#clases" data-section="clases"><i class="fas fa-chalkboard-user"></i><span>Horario</span></a></li>
-                <li><a href="#camara" data-section="camara"><i class="fas fa-camera"></i><span>Cámara</span></a></li>
+                <li><a href="#camara" data-section="camara"><i class="fas fa-chalkboard"></i><span>Salón</span></a></li>
                 <li><a href="#estadisticas" data-section="estadisticas"><i class="fas fa-chart-bar"></i><span>Estadísticas</span></a></li>
                 <li><a href="#configuracion" data-section="configuracion"><i class="fas fa-gear"></i><span>Configuración</span></a></li>
                 <li class="sidebar-separator"></li>
@@ -137,7 +151,21 @@
                         <span class="profile-clase-actual-badge" id="profileClaseActualBadge" style="display:none;">
                             <span class="clase-actual-dot"></span> <span id="profileClaseActualTexto"></span>
                         </span>
+                        <div class="profile-meta-row" id="profileMetaRow" style="display:none;">
+                            <span class="profile-meta-chip" id="profileColegioChip" style="display:none;"><i class="fas fa-school"></i> <span id="profileColegioTexto">--</span></span>
+                            <span class="profile-meta-chip" id="profileGradoChip" style="display:none;"><i class="fas fa-graduation-cap"></i> <span id="profileGradoTexto">--</span></span>
+                        </div>
                         <p class="profile-bio-line" id="profileBio">Aún no has agregado una descripción.</p>
+                        <div class="profile-spotify-now" id="profileSpotifyNow" style="display:none;">
+                            <span class="spotify-eq" aria-hidden="true"><span></span><span></span><span></span></span>
+                            <i class="fab fa-spotify"></i>
+                            <span id="profileSpotifyNowText">--</span>
+                        </div>
+                        <div class="profile-owner-id-row owner-only-control" id="profileOwnerIdRow">
+                            <i class="fas fa-lock"></i>
+                            <span>ID único: <span id="profileOwnerIdValue" class="profile-owner-id-value">••••••••••••</span></span>
+                            <button class="btn btn-secondary btn-sm" id="revealOwnerIdBtn" type="button"><i class="fas fa-eye"></i> Ver</button>
+                        </div>
                     </div>
 
                     <div class="profile-actions" id="profileActions">
@@ -285,26 +313,61 @@
         </section>
 
         <section id="section-camara" class="dashboard-section">
-            <div class="camera-container">
-                <div class="camera-card">
-                    <div class="camera-header">
-                        <h2><i class="fas fa-camera"></i> Reconocimiento Facial</h2>
-                        <div class="camera-status" id="cameraStatus"><span class="status-dot active"></span><span>En línea</span></div>
+            <div class="salon-container">
+                <h2><i class="fas fa-chalkboard"></i> Salón</h2>
+                <p class="salon-subtitle">Tus asistencias registradas por el reconocimiento facial del colegio.</p>
+
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-calendar-check"></i></div><div class="stat-info"><span class="stat-value" id="salonAsistenciasTotales">0</span><span class="stat-label">Asistencias totales</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-fire"></i></div><div class="stat-info"><span class="stat-value" id="salonRacha">0</span><span class="stat-label">Racha de días seguidos</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-calendar-week"></i></div><div class="stat-info"><span class="stat-value" id="salonEstaSemana">0</span><span class="stat-label">Asistencias esta semana</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-clock"></i></div><div class="stat-info"><span class="stat-value" id="salonUltimaAsistencia">--</span><span class="stat-label">Última asistencia</span></div></div>
+                </div>
+
+                <div class="panel-grid" style="margin-top:1.5rem;">
+                    <div class="panel-card">
+                        <div class="panel-card-header"><h3><i class="fas fa-id-card"></i> Mi información</h3></div>
+                        <div class="panel-card-body">
+                            <div class="account-activity-grid">
+                                <div class="account-activity-item"><span class="activity-item-label">Colegio</span><span class="activity-item-value" id="salonColegioTexto">--</span></div>
+                                <div class="account-activity-item"><span class="activity-item-label">Grado</span><span class="activity-item-value" id="salonGradoTexto">--</span></div>
+                                <div class="account-activity-item"><span class="activity-item-label">Estado del reconocedor facial</span><span class="activity-item-value" id="salonEstadoReconocedor">Sin datos aún</span></div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="camera-body">
-                        <div class="video-container" id="videoContainer">
-                            <video id="videoFeed" autoplay playsinline></video>
-                            <canvas id="overlayCanvas"></canvas>
-                            <div class="video-placeholder" id="videoPlaceholder"><i class="fas fa-camera"></i><p>Haz clic en "Iniciar cámara" para comenzar</p></div>
+
+                    <div class="panel-card">
+                        <div class="panel-card-header"><h3><i class="fas fa-school"></i> Configurar mi colegio y grado</h3></div>
+                        <div class="panel-card-body">
+                            <p class="school-grade-hint">Escribe el nombre exacto de tu colegio y tu grado. El grado <strong>solo se puede guardar una vez</strong>, revísalo bien antes de confirmar.</p>
+                            <div class="school-grade-form">
+                                <div class="form-group">
+                                    <label for="inputColegio"><i class="fas fa-school"></i> Colegio</label>
+                                    <input type="text" id="inputColegio" list="colegiosSugeridos" placeholder="Ej. Colegio San José" autocomplete="off" />
+                                    <datalist id="colegiosSugeridos"></datalist>
+                                    <div class="config-note">Empieza a escribir y verás sugerencias si ya existe; si no, se crea con tu nombre tal cual lo escribas.</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="inputGrado"><i class="fas fa-graduation-cap"></i> Grado</label>
+                                    <input type="text" id="inputGrado" list="gradosSugeridos" placeholder="Ej. Grado 9, Décimo, 3ro de Bachillerato" autocomplete="off" />
+                                    <datalist id="gradosSugeridos"></datalist>
+                                    <div id="gradoNote" class="config-note"></div>
+                                </div>
+                                <button class="btn btn-secondary" id="guardarGradoBtn"><i class="fas fa-floppy-disk"></i> Guardar colegio y grado</button>
+                            </div>
                         </div>
-                        <div class="camera-controls">
-                            <button class="btn btn-primary" id="startCameraBtn"><i class="fas fa-play"></i> Iniciar cámara</button>
-                            <button class="btn btn-success" id="captureBtn" disabled><i class="fas fa-camera"></i> Capturar</button>
-                            <button class="btn btn-secondary" id="switchCameraBtn" disabled><i class="fas fa-rotate"></i> Cambiar cámara</button>
-                        </div>
-                        <div class="camera-result" id="cameraResult" style="display:none;">
-                            <h4>Resultado del reconocimiento</h4>
-                            <div class="result-content"><i class="fas fa-face-smile"></i><span>Rostro detectado correctamente</span></div>
+                    </div>
+
+                    <div class="panel-card full-width">
+                        <div class="panel-card-header"><h3><i class="fas fa-list-check"></i> Historial de asistencias</h3></div>
+                        <div class="panel-card-body">
+                            <div id="salonHistorialLista" class="activity-timeline">
+                                <div class="empty-posts">
+                                    <i class="fas fa-camera-retro"></i>
+                                    <p>Todavía no hay asistencias registradas</p>
+                                    <p style="font-size:0.8rem;">Aquí aparecerán en cuanto el reconocimiento facial del colegio registre tu entrada</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -400,6 +463,18 @@
                     </div>
                 </div>
 
+
+                <h3 class="config-subheading"><i class="fas fa-plug"></i> Conexiones</h3>
+                <div class="config-grid">
+                    <div class="config-card config-card-spotify">
+                        <h3><i class="fab fa-spotify"></i> Spotify</h3>
+                        <p>Conecta tu cuenta para que en tu perfil se muestre en tiempo real la canción que estás escuchando.</p>
+                        <div class="profile-spotify-connect" id="profileSpotifyConnectRow">
+                            <button class="btn btn-spotify btn-sm" id="spotifyConnectBtn" type="button"><i class="fab fa-spotify"></i> Conectar con Spotify</button>
+                            <span class="spotify-connected-label" id="spotifyConnectedLabel" style="display:none;"><i class="fab fa-spotify"></i> Cuenta de Spotify conectada <button class="btn btn-cancel btn-sm" id="spotifyDisconnectBtn" type="button">Desconectar</button></span>
+                        </div>
+                    </div>
+                </div>
 
                 <h3 class="config-subheading"><i class="fas fa-shield-halved"></i> Cuenta</h3>
                 <div class="config-grid">

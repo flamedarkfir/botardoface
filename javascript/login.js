@@ -3,6 +3,21 @@ import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, s
 (function() {
     'use strict';
 
+    // Genera el ID único e irrepetible de cada cuenta. Se crea una sola vez,
+    // al registrarse, y queda guardado para siempre en el documento del
+    // usuario. Más adelante tendrá una función especial (por ejemplo,
+    // vincularse con el reconocimiento facial del salón), por eso debe ser
+    // único de verdad y no depender de datos que el usuario pueda cambiar.
+    function generarBotardoId() {
+        if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+    window.generarBotardoId = generarBotardoId;
+
     var loginPanel = document.getElementById('loginPanel');
     var registerPanel = document.getElementById('registerPanel');
     var showRegister = document.getElementById('showRegister');
@@ -429,7 +444,11 @@ import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, s
                     name: displayName,
                     username: username,
                     email: email,
-                    createdAt: new Date().toISOString()
+                    createdAt: new Date().toISOString(),
+                    botardoId: generarBotardoId(),
+                    grado: '',
+                    gradoChanged: false,
+                    colegio: ''
                 });
             } catch (firestoreErr) {
                 console.error('Error guardando datos en Firestore:', firestoreErr);

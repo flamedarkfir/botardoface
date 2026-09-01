@@ -1,4 +1,4 @@
-import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
+import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, arrayUnion, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
 
 (function() {
     'use strict';
@@ -40,10 +40,89 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let viewingProfileData = null;
     let activeProfileTab = 'publicaciones';
 
+    // Igual que en login.js: genera un ID único para cuentas que todavía no
+    // tengan uno (por ejemplo cuentas creadas antes de este cambio).
+    function generarBotardoId() {
+        if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    // --- Ofuscación visual del ID único ---
+    // Importante: esto NO es un cifrado a prueba de expertos en seguridad.
+    // Es una capa de privacidad visual para que el ID no quede expuesto
+    // "a simple vista" en la pantalla ni se pueda leer por encima del
+    // hombro; el dato en sí ya está protegido porque Firestore solo debe
+    // permitir que cada usuario lea su propio documento (reglas de
+    // seguridad del lado de Firebase). Para este proyecto de colegio es
+    // suficiente y evita depender de un backend propio.
+    const BOTARDO_ID_KEY = 'BotardoFaceApp2026';
+    function ofuscarId(texto) {
+        let resultado = '';
+        for (let i = 0; i < texto.length; i++) {
+            const codigo = texto.charCodeAt(i) ^ BOTARDO_ID_KEY.charCodeAt(i % BOTARDO_ID_KEY.length);
+            resultado += String.fromCharCode(codigo);
+        }
+        return btoa(unescape(encodeURIComponent(resultado)));
+    }
+    function desofuscarId(textoOfuscado) {
+        try {
+            const decodificado = decodeURIComponent(escape(atob(textoOfuscado)));
+            let resultado = '';
+            for (let i = 0; i < decodificado.length; i++) {
+                const codigo = decodificado.charCodeAt(i) ^ BOTARDO_ID_KEY.charCodeAt(i % BOTARDO_ID_KEY.length);
+                resultado += String.fromCharCode(codigo);
+            }
+            return resultado;
+        } catch (e) {
+            return null;
+        }
+    }
+
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, function(c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
+    }
+
+    // --- Pantalla de carga ---
+    // Se queda tapando el dashboard hasta que confirmamos que la sesión
+    // y los datos del usuario ya están listos, para no dejar ver el
+    // panel "vacío" (usuario en blanco, avatar por defecto) mientras
+    // Firebase todavía está resolviendo todo.
+    function marcarPasoCarga(paso, estado) {
+        const li = document.querySelector('#appLoaderSteps li[data-step="' + paso + '"]');
+        if (!li) return;
+        const icon = li.querySelector('i');
+        if (estado === 'active') {
+            li.classList.add('active');
+            li.classList.remove('done');
+            if (icon) icon.className = 'fas fa-circle-notch fa-spin';
+        } else if (estado === 'done') {
+            li.classList.remove('active');
+            li.classList.add('done');
+            if (icon) icon.className = 'fas fa-check';
+        }
+    }
+
+    function actualizarTextoCarga(texto) {
+        const el = document.getElementById('appLoaderText');
+        if (el) el.textContent = texto;
+    }
+
+    let appLoaderOculto = false;
+    function ocultarAppLoader() {
+        if (appLoaderOculto) return;
+        appLoaderOculto = true;
+        const loader = document.getElementById('appLoader');
+        if (!loader) return;
+        loader.classList.add('app-loader-hidden');
+        setTimeout(function() {
+            if (loader.parentNode) loader.parentNode.removeChild(loader);
+        }, 500);
     }
 
     function getTodayString() {
@@ -175,15 +254,6 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     const notifDropdown = document.getElementById('notifDropdown');
     const notifBadge = document.getElementById('notifBadge');
 
-    const startCameraBtn = document.getElementById('startCameraBtn');
-    const captureBtn = document.getElementById('captureBtn');
-    const switchCameraBtn = document.getElementById('switchCameraBtn');
-    const videoFeed = document.getElementById('videoFeed');
-    const overlayCanvas = document.getElementById('overlayCanvas');
-    const videoPlaceholder = document.getElementById('videoPlaceholder');
-    const cameraResult = document.getElementById('cameraResult');
-    const cameraStatus = document.getElementById('cameraStatus');
-
     const projectsGrid = document.getElementById('projectsGrid');
 
     const totalReconocimientos = document.getElementById('totalReconocimientos');
@@ -214,7 +284,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             'section-perfil': 'Perfil',
             'section-mensajes': 'Mensajes',
             'section-clases': 'Horario',
-            'section-camara': 'Cámara',
+            'section-camara': 'Salón',
             'section-proyectos': 'Proyectos',
             'section-estadisticas': 'Estadísticas',
             'section-configuracion': 'Configuración'
@@ -248,7 +318,10 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const data = currentUserData || { name: 'Usuario', username: 'usuario', email: '' };
 
         const userNameDisplay = document.getElementById('userNameDisplay');
-        if (userNameDisplay) userNameDisplay.textContent = data.name;
+        if (userNameDisplay) {
+            userNameDisplay.textContent = data.name;
+            userNameDisplay.title = data.name;
+        }
 
         const profileNameEl = document.getElementById('profileName');
         if (profileNameEl) profileNameEl.textContent = data.name;
@@ -262,8 +335,635 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const userRoleEl = document.querySelector('.user-role');
         if (userRoleEl) userRoleEl.textContent = 'Alumno';
 
-        const profileGradoEl = document.getElementById('profileGrado');
-        if (profileGradoEl) profileGradoEl.textContent = 'Grado: ' + (data.grado || '--');
+        const metaRow = document.getElementById('profileMetaRow');
+        const colegioChip = document.getElementById('profileColegioChip');
+        const colegioTexto = document.getElementById('profileColegioTexto');
+        const gradoChip = document.getElementById('profileGradoChip');
+        const gradoTexto = document.getElementById('profileGradoTexto');
+        const tieneColegio = !!data.colegio;
+        const tieneGrado = !!data.grado;
+        if (colegioChip) colegioChip.style.display = tieneColegio ? 'inline-flex' : 'none';
+        if (colegioTexto) colegioTexto.textContent = data.colegio || '--';
+        if (gradoChip) gradoChip.style.display = tieneGrado ? 'inline-flex' : 'none';
+        if (gradoTexto) gradoTexto.textContent = data.grado || '--';
+        if (metaRow) metaRow.style.display = (tieneColegio || tieneGrado) ? 'flex' : 'none';
+
+        const ownerIdValueEl = document.getElementById('profileOwnerIdValue');
+        if (ownerIdValueEl) {
+            ownerIdValueEl.textContent = '••••••••••••';
+            ownerIdValueEl.dataset.revealed = 'false';
+            ownerIdValueEl.dataset.idOfuscado = data.botardoId ? ofuscarId(data.botardoId) : '';
+        }
+    }
+
+    function initIdUnico() {
+        const revealBtn = document.getElementById('revealOwnerIdBtn');
+        const valueEl = document.getElementById('profileOwnerIdValue');
+        if (!revealBtn || !valueEl) return;
+        revealBtn.addEventListener('click', function() {
+            const yaVisible = valueEl.dataset.revealed === 'true';
+            if (yaVisible) {
+                valueEl.textContent = '••••••••••••';
+                valueEl.dataset.revealed = 'false';
+                revealBtn.innerHTML = '<i class="fas fa-eye"></i> Ver';
+                return;
+            }
+            if (!confirm('¿Seguro que quieres ver tu ID único? No lo compartas con nadie: es personal e intransferible.')) return;
+            const ofuscado = valueEl.dataset.idOfuscado;
+            const real = ofuscado ? desofuscarId(ofuscado) : (currentUserData && currentUserData.botardoId);
+            valueEl.textContent = real || 'No disponible';
+            valueEl.dataset.revealed = 'true';
+            revealBtn.innerHTML = '<i class="fas fa-eye-slash"></i> Ocultar';
+        });
+    }
+
+    // --- Colegio y grado ---
+    // Los "colegios" y sus "grados" no son una lista fija: cualquier
+    // usuario puede crear su colegio y sus grados la primera vez que los
+    // necesite (por ejemplo, el primer alumno de un colegio nuevo los
+    // registra, y luego el resto de compañeros del mismo colegio los ven
+    // en el desplegable). El grado del usuario solo se puede guardar una
+    // vez; después queda bloqueado.
+    let colegiosCache = [];
+
+    function slugColegio(nombre) {
+        return nombre.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 60) || ('colegio-' + Date.now());
+    }
+
+    // Compara nombres de colegio/grado sin importar mayúsculas, tildes
+    // ni espacios extra, para no crear duplicados como "Colegio San
+    // José" y "colegio san jose" cuando el estudiante escribe libremente.
+    function normalizarTextoComparacion(texto) {
+        return String(texto || '').toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    async function cargarColegios() {
+        try {
+            const snap = await getDocs(collection(db, 'colegios'));
+            colegiosCache = [];
+            snap.forEach(function(d) {
+                colegiosCache.push({ id: d.id, nombre: d.data().nombre, grados: d.data().grados || [] });
+            });
+            colegiosCache.sort(function(a, b) { return a.nombre.localeCompare(b.nombre); });
+        } catch (err) {
+            console.error('Error cargando colegios:', err);
+        }
+    }
+
+    // El colegio y el grado ahora son campos de texto libre (el
+    // estudiante los escribe directamente, no elige de una lista). Los
+    // <datalist> solo sirven como sugerencia opcional para evitar
+    // duplicados por error de tipeo; el estudiante puede escribir lo que
+    // quiera y, si el colegio no existe todavía, se crea automáticamente.
+    function renderColegiosDatalist() {
+        const dl = document.getElementById('colegiosSugeridos');
+        if (!dl) return;
+        dl.innerHTML = colegiosCache.map(function(c) {
+            return `<option value="${escapeHtml(c.nombre)}"></option>`;
+        }).join('');
+    }
+
+    function renderGradosDatalistParaColegio(nombreColegio) {
+        const dl = document.getElementById('gradosSugeridos');
+        if (!dl) return;
+        const norm = normalizarTextoComparacion(nombreColegio);
+        const colegio = norm ? colegiosCache.find(function(c) { return normalizarTextoComparacion(c.nombre) === norm; }) : null;
+        dl.innerHTML = colegio ? colegio.grados.map(function(g) {
+            return `<option value="${escapeHtml(g)}"></option>`;
+        }).join('') : '';
+    }
+
+    function actualizarNotaGrado() {
+        const note = document.getElementById('gradoNote');
+        const guardarBtn = document.getElementById('guardarGradoBtn');
+        const inputColegioEl = document.getElementById('inputColegio');
+        const inputGradoEl = document.getElementById('inputGrado');
+        const yaSeCambio = !!(currentUserData && currentUserData.gradoChanged);
+        if (note) {
+            note.innerHTML = yaSeCambio
+                ? `Ya elegiste tu grado y no se puede volver a cambiar. Si te equivocaste, escribe a <a href="mailto:${SOPORTE_EMAIL}">soporte</a>.`
+                : 'Podrás escribir tu colegio y tu grado una sola vez. Revísalo bien antes de guardar.';
+        }
+        if (guardarBtn) guardarBtn.disabled = yaSeCambio;
+        if (inputColegioEl) inputColegioEl.disabled = yaSeCambio;
+        if (inputGradoEl) inputGradoEl.disabled = yaSeCambio;
+    }
+
+    async function guardarColegioGradoUsuario(colegioNombre, gradoNombre) {
+        await setDoc(doc(db, 'users', currentUser.uid), {
+            colegio: colegioNombre,
+            grado: gradoNombre,
+            gradoChanged: true
+        }, { merge: true });
+        currentUserData.colegio = colegioNombre;
+        currentUserData.grado = gradoNombre;
+        currentUserData.gradoChanged = true;
+        loadUserData();
+        actualizarNotaGrado();
+        cargarAsistenciasSalon();
+    }
+
+    async function initGradoColegio() {
+        await cargarColegios();
+        renderColegiosDatalist();
+
+        const inputColegioEl = document.getElementById('inputColegio');
+        const inputGradoEl = document.getElementById('inputGrado');
+        const guardarBtn = document.getElementById('guardarGradoBtn');
+
+        if (inputColegioEl) {
+            inputColegioEl.value = (currentUserData && currentUserData.colegio) || '';
+            renderGradosDatalistParaColegio(inputColegioEl.value);
+            inputColegioEl.addEventListener('input', function() {
+                renderGradosDatalistParaColegio(inputColegioEl.value);
+            });
+        }
+        if (inputGradoEl) {
+            inputGradoEl.value = (currentUserData && currentUserData.grado) || '';
+        }
+
+        if (guardarBtn) {
+            guardarBtn.addEventListener('click', async function() {
+                if (currentUserData && currentUserData.gradoChanged) {
+                    alert(`Ya elegiste tu grado. Escribe a ${SOPORTE_EMAIL} para cambiarlo.`);
+                    return;
+                }
+                const colegioTexto = inputColegioEl ? inputColegioEl.value.trim() : '';
+                const gradoTexto = inputGradoEl ? inputGradoEl.value.trim() : '';
+                if (!colegioTexto || !gradoTexto) {
+                    alert('Escribe tu colegio y tu grado antes de guardar.');
+                    return;
+                }
+                if (!confirm(`¿Seguro que quieres guardar "${gradoTexto}" en "${colegioTexto}" como tu grado? Solo podrás hacerlo una vez; para cambios futuros tendrás que contactar a soporte.`)) return;
+
+                guardarBtn.disabled = true;
+                try {
+                    const normColegio = normalizarTextoComparacion(colegioTexto);
+                    const colegioExistente = colegiosCache.find(function(c) { return normalizarTextoComparacion(c.nombre) === normColegio; });
+
+                    if (colegioExistente) {
+                        const normGrado = normalizarTextoComparacion(gradoTexto);
+                        const gradoExistente = colegioExistente.grados.find(function(g) { return normalizarTextoComparacion(g) === normGrado; });
+                        const gradoFinal = gradoExistente || gradoTexto;
+                        if (!gradoExistente) {
+                            await setDoc(doc(db, 'colegios', colegioExistente.id), { grados: arrayUnion(gradoTexto) }, { merge: true });
+                            colegioExistente.grados.push(gradoTexto);
+                        }
+                        await guardarColegioGradoUsuario(colegioExistente.nombre, gradoFinal);
+                    } else {
+                        const id = slugColegio(colegioTexto);
+                        await setDoc(doc(db, 'colegios', id), { nombre: colegioTexto, grados: [gradoTexto] });
+                        colegiosCache.push({ id: id, nombre: colegioTexto, grados: [gradoTexto] });
+                        colegiosCache.sort(function(a, b) { return a.nombre.localeCompare(b.nombre); });
+                        await guardarColegioGradoUsuario(colegioTexto, gradoTexto);
+                    }
+                    alert('Tu colegio y tu grado se guardaron correctamente.');
+                } catch (err) {
+                    console.error('Error guardando grado:', err);
+                    alert('No se pudo guardar: ' + (err.code || err.message));
+                    guardarBtn.disabled = false;
+                }
+            });
+        }
+
+        actualizarNotaGrado();
+    }
+
+    // --- Integración con Spotify ---
+    //
+    // Usa el flujo "Authorization Code with PKCE", pensado exactamente
+    // para apps que corren solo en el navegador: NO necesita el Client
+    // Secret (por eso no aparece aquí — si ya lo compartiste en algún
+    // lado, ve a tu Dashboard de Spotify for Developers y dale a
+    // "regenerar" para invalidarlo, aunque con PKCE ni siquiera lo vas a
+    // usar). Solo hace falta el Client ID, que sí es seguro tenerlo
+    // visible en el código del navegador.
+    //
+    // Los tokens (access_token y refresh_token) se guardan en
+    // localStorage del navegador para no tener que volver a pedir el
+    // login en esa misma sesión/dispositivo, y el refresh_token también
+    // se guarda en el documento del usuario en Firestore, para que si
+    // entra desde otro dispositivo/navegador no tenga que autorizar de
+    // nuevo: el refresh_token de Firestore se usa para pedir un
+    // access_token nuevo automáticamente y en silencio.
+    const SPOTIFY_CLIENT_ID = 'cbb396e04ba040d2a7cb2c44078071be';
+    // Antes esto era un texto fijo apuntando siempre a producción
+    // (botardoface.pages.dev). El problema: Spotify SIEMPRE redirige a
+    // esa URL fija sin importar desde dónde abriste la app, así que si
+    // estabas probando en localhost/Live Server, el popup terminaba
+    // cargando el sitio EN PRODUCCIÓN (con el código que esté publicado
+    // ahí, no tus cambios locales) — por eso parecía que "abría el
+    // dashboard de nuevo" en vez de la pantalla de Spotify. Ahora se arma
+    // según el dominio actual, así funciona igual en local y en
+    // producción, siempre y cuando esa URL esté agregada en la lista de
+    // "Redirect URIs" de tu app en el Dashboard de Spotify for
+    // Developers (Settings de tu app → Redirect URIs → Add).
+    const SPOTIFY_REDIRECT_URI = window.location.origin + '/html/dashboard';
+    const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-playback-state';
+    const SPOTIFY_LS_KEY = 'botardo_spotify_tokens';
+    // Antes se guardaba en sessionStorage, pero la ventana emergente de
+    // conexión es una ventana/pestaña aparte con su propio sessionStorage,
+    // así que usamos localStorage (compartido entre ventanas del mismo
+    // sitio) para que el intercambio de tokens funcione desde el popup.
+    const SPOTIFY_VERIFIER_KEY = 'botardo_spotify_verifier';
+    const SPOTIFY_POPUP_NAME = 'botardo_spotify_popup';
+    // Valor que mandamos como "state" de OAuth y que Spotify nos
+    // devuelve intacto en la URL de vuelta. Es la forma confiable de
+    // saber "esta carga de la página es el popup de conexión": algunos
+    // navegadores rompen la relación window.opener/window.name cuando la
+    // ventana pasa por un dominio externo (Spotify) antes de volver, así
+    // que no podemos depender solo de eso.
+    const SPOTIFY_STATE_POPUP = 'botardo_popup_v1';
+
+    // Se calcula una sola vez, apenas se carga el script, leyendo la URL
+    // tal como llegó (antes de que la limpiemos). Detecta si esta carga
+    // de la página es la ventana emergente que abrimos para conectar
+    // Spotify (en vez de la pestaña principal del sitio). Así esa
+    // ventana solo hace el intercambio de tokens y se cierra sola, sin
+    // volver a montar todo el dashboard ni recargar el sitio principal.
+    const ES_VENTANA_EMERGENTE_SPOTIFY = (function() {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('state') === SPOTIFY_STATE_POPUP) return true;
+        } catch (e) { /* ignorar */ }
+        try {
+            return !!(window.opener && window.opener !== window && window.name === SPOTIFY_POPUP_NAME);
+        } catch (e) {
+            return false;
+        }
+    })();
+
+    function mostrarMensajePopupSpotify(texto) {
+        document.body.innerHTML = `
+            <div class="spotify-popup-message">
+                <i class="fab fa-spotify"></i>
+                <p>${escapeHtml(texto)}</p>
+            </div>
+        `;
+    }
+
+    function base64UrlEncode(bytes) {
+        let binary = '';
+        bytes.forEach(function(b) { binary += String.fromCharCode(b); });
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function generarSpotifyCodeVerifier() {
+        const array = new Uint8Array(64);
+        crypto.getRandomValues(array);
+        return base64UrlEncode(array);
+    }
+
+    async function generarSpotifyCodeChallenge(verifier) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(verifier);
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        return base64UrlEncode(new Uint8Array(digest));
+    }
+
+    function leerTokensSpotifyLocal() {
+        try {
+            const raw = localStorage.getItem(SPOTIFY_LS_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function guardarTokensSpotifyLocal(tokens) {
+        try {
+            localStorage.setItem(SPOTIFY_LS_KEY, JSON.stringify(tokens));
+        } catch (e) {
+            console.error('No se pudo guardar el token de Spotify localmente:', e);
+        }
+    }
+
+    function borrarTokensSpotifyLocal() {
+        try { localStorage.removeItem(SPOTIFY_LS_KEY); } catch (e) { /* ignorar */ }
+    }
+
+    async function guardarRefreshTokenEnFirestore(refreshToken) {
+        if (!currentUser) return;
+        try {
+            await setDoc(doc(db, 'users', currentUser.uid), { spotifyRefreshToken: refreshToken }, { merge: true });
+            if (currentUserData) currentUserData.spotifyRefreshToken = refreshToken;
+        } catch (err) {
+            console.error('Error guardando refresh token de Spotify:', err);
+        }
+    }
+
+    async function iniciarConexionSpotify() {
+        const verifier = generarSpotifyCodeVerifier();
+        const challenge = await generarSpotifyCodeChallenge(verifier);
+        localStorage.setItem(SPOTIFY_VERIFIER_KEY, verifier);
+
+        const baseParams = {
+            client_id: SPOTIFY_CLIENT_ID,
+            response_type: 'code',
+            redirect_uri: SPOTIFY_REDIRECT_URI,
+            code_challenge_method: 'S256',
+            code_challenge: challenge,
+            scope: SPOTIFY_SCOPES
+        };
+        // La versión "popup" lleva un state especial para que, al volver,
+        // sepamos con certeza que esa carga es la ventana emergente (ver
+        // ES_VENTANA_EMERGENTE_SPOTIFY más arriba). La versión "directa"
+        // NO lo lleva, porque esa es para cuando el navegador bloqueó el
+        // popup y la pestaña principal navega de verdad: si le pusiéramos
+        // el mismo state, la pestaña principal se confundiría pensando
+        // que ES el popup.
+        const authUrlPopup = 'https://accounts.spotify.com/authorize?' +
+            new URLSearchParams(Object.assign({}, baseParams, { state: SPOTIFY_STATE_POPUP })).toString();
+        const authUrlDirecta = 'https://accounts.spotify.com/authorize?' +
+            new URLSearchParams(baseParams).toString();
+
+        // Abrimos Spotify en una ventana flotante en vez de navegar la
+        // pestaña principal, para que el sitio nunca se recargue ni
+        // pierda dónde estabas.
+        const ancho = 480, alto = 720;
+        const left = Math.max(0, Math.round((window.screen.width - ancho) / 2));
+        const top = Math.max(0, Math.round((window.screen.height - alto) / 2));
+        const popup = window.open(
+            authUrlPopup,
+            SPOTIFY_POPUP_NAME,
+            `width=${ancho},height=${alto},left=${left},top=${top},resizable=yes,scrollbars=yes`
+        );
+
+        if (!popup) {
+            // El navegador bloqueó la ventana emergente: usamos la
+            // redirección de página completa como respaldo.
+            window.location.href = authUrlDirecta;
+            return;
+        }
+
+        const vigilancia = setInterval(function() {
+            if (popup.closed) {
+                clearInterval(vigilancia);
+                actualizarUISpotifyConexion();
+            }
+        }, 700);
+    }
+
+    async function intercambiarCodigoSpotify(code) {
+        const verifier = localStorage.getItem(SPOTIFY_VERIFIER_KEY);
+        if (!verifier) return false;
+        try {
+            const body = new URLSearchParams({
+                grant_type: 'authorization_code',
+                code: code,
+                redirect_uri: SPOTIFY_REDIRECT_URI,
+                client_id: SPOTIFY_CLIENT_ID,
+                code_verifier: verifier
+            });
+            const resp = await fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error_description || data.error || 'Error desconocido');
+
+            const tokens = {
+                access_token: data.access_token,
+                refresh_token: data.refresh_token,
+                expires_at: Date.now() + (data.expires_in * 1000)
+            };
+            guardarTokensSpotifyLocal(tokens);
+            if (data.refresh_token) await guardarRefreshTokenEnFirestore(data.refresh_token);
+            localStorage.removeItem(SPOTIFY_VERIFIER_KEY);
+            return true;
+        } catch (err) {
+            console.error('Error conectando con Spotify:', err);
+            if (!ES_VENTANA_EMERGENTE_SPOTIFY) alert('No se pudo conectar con Spotify: ' + err.message);
+            return false;
+        }
+    }
+
+    async function refrescarTokenSpotify(refreshToken) {
+        try {
+            const body = new URLSearchParams({
+                grant_type: 'refresh_token',
+                refresh_token: refreshToken,
+                client_id: SPOTIFY_CLIENT_ID
+            });
+            const resp = await fetch('https://accounts.spotify.com/api/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error_description || data.error || 'Error desconocido');
+
+            const tokens = {
+                access_token: data.access_token,
+                // Spotify no siempre devuelve un refresh_token nuevo; si no
+                // viene, seguimos usando el que ya teníamos.
+                refresh_token: data.refresh_token || refreshToken,
+                expires_at: Date.now() + (data.expires_in * 1000)
+            };
+            guardarTokensSpotifyLocal(tokens);
+            if (data.refresh_token) await guardarRefreshTokenEnFirestore(data.refresh_token);
+            return tokens.access_token;
+        } catch (err) {
+            console.error('Error refrescando token de Spotify:', err);
+            return null;
+        }
+    }
+
+    // Devuelve un access_token válido sin volver a pedirle nada al
+    // usuario, a menos que nunca haya conectado su cuenta. Este es el
+    // punto clave que evita el bug de "me lo pide siempre": primero mira
+    // localStorage, y si el access_token ya expiró usa el refresh_token
+    // (de localStorage o, si no hay, el que quedó guardado en su cuenta
+    // de Firestore) para conseguir uno nuevo en silencio.
+    async function obtenerAccessTokenSpotifyValido() {
+        let tokens = leerTokensSpotifyLocal();
+
+        if (tokens && tokens.access_token && tokens.expires_at > Date.now() + 5000) {
+            return tokens.access_token;
+        }
+
+        const refreshToken = (tokens && tokens.refresh_token) || (currentUserData && currentUserData.spotifyRefreshToken);
+        if (refreshToken) {
+            return await refrescarTokenSpotify(refreshToken);
+        }
+
+        return null;
+    }
+
+    function estaSpotifyConectado() {
+        const tokens = leerTokensSpotifyLocal();
+        return !!((tokens && tokens.refresh_token) || (currentUserData && currentUserData.spotifyRefreshToken));
+    }
+
+    async function desconectarSpotify() {
+        if (!confirm('¿Quieres desconectar tu cuenta de Spotify?')) return;
+        borrarTokensSpotifyLocal();
+        try {
+            await setDoc(doc(db, 'users', currentUser.uid), { spotifyRefreshToken: null }, { merge: true });
+            if (currentUserData) currentUserData.spotifyRefreshToken = null;
+        } catch (err) {
+            console.error('Error desconectando Spotify:', err);
+        }
+        try { await set(ref(rtdb, 'spotifyNowPlaying/' + currentUser.uid), null); } catch (e) { /* ignorar */ }
+        actualizarUISpotifyConexion();
+    }
+
+    function actualizarUISpotifyConexion() {
+        const connectBtn = document.getElementById('spotifyConnectBtn');
+        const connectedLabel = document.getElementById('spotifyConnectedLabel');
+        const conectado = estaSpotifyConectado();
+        if (connectBtn) connectBtn.style.display = conectado ? 'none' : 'inline-flex';
+        if (connectedLabel) connectedLabel.style.display = conectado ? 'inline-flex' : 'none';
+    }
+
+    // Cada cierto tiempo consulta qué está sonando en la cuenta de
+    // Spotify del usuario (si conectó una) y lo publica en la Realtime
+    // Database, en el mismo estilo que la presencia "en línea" que ya
+    // existe en la app. Así, cualquiera que vea su perfil (siguiendo el
+    // mismo esquema de permisos que el resto del perfil) puede ver en
+    // vivo qué está escuchando, sin que su navegador necesite el token
+    // de Spotify de nadie más.
+    async function actualizarSpotifyNowPlaying() {
+        if (!currentUser || !estaSpotifyConectado()) return;
+        const token = await obtenerAccessTokenSpotifyValido();
+        if (!token) return;
+
+        try {
+            const resp = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+                headers: { Authorization: 'Bearer ' + token }
+            });
+
+            const miNowPlayingRef = ref(rtdb, 'spotifyNowPlaying/' + currentUser.uid);
+
+            if (resp.status === 204 || resp.status === 202) {
+                await set(miNowPlayingRef, null);
+                return;
+            }
+            if (!resp.ok) return;
+
+            const data = await resp.json();
+            if (!data || !data.item || !data.is_playing) {
+                await set(miNowPlayingRef, null);
+                return;
+            }
+
+            await set(miNowPlayingRef, {
+                cancion: data.item.name,
+                artista: (data.item.artists || []).map(function(a) { return a.name; }).join(', '),
+                actualizadoEn: Date.now()
+            });
+            onDisconnect(miNowPlayingRef).remove();
+        } catch (err) {
+            console.error('Error consultando reproducción actual de Spotify:', err);
+        }
+    }
+
+    let spotifyPollInterval = null;
+    let nowPlayingListenerRef = null;
+
+    function pintarSpotifyNowPlaying(data) {
+        const bloque = document.getElementById('profileSpotifyNow');
+        const texto = document.getElementById('profileSpotifyNowText');
+        if (!bloque || !texto) return;
+        if (data && data.cancion) {
+            texto.textContent = data.cancion + (data.artista ? ' — ' + data.artista : '');
+            bloque.style.display = 'flex';
+        } else {
+            bloque.style.display = 'none';
+        }
+    }
+
+    function escucharSpotifyNowPlayingDeUid(uid) {
+        if (nowPlayingListenerRef) {
+            off(nowPlayingListenerRef);
+            nowPlayingListenerRef = null;
+        }
+        pintarSpotifyNowPlaying(null);
+        if (!uid) return;
+        nowPlayingListenerRef = ref(rtdb, 'spotifyNowPlaying/' + uid);
+        onValue(nowPlayingListenerRef, function(snap) {
+            pintarSpotifyNowPlaying(snap.exists() ? snap.val() : null);
+        });
+    }
+
+    // Mientras la pestaña está visible consultamos seguido para que se
+    // sienta "en vivo"; si el usuario cambia de pestaña bajamos la
+    // frecuencia para no gastar llamadas de la API de Spotify de balde,
+    // y en cuanto vuelve a mirar la pestaña consultamos al instante.
+    const SPOTIFY_POLL_MS_ACTIVO = 5000;
+    const SPOTIFY_POLL_MS_OCULTO = 30000;
+
+    function reiniciarPollingSpotify() {
+        if (spotifyPollInterval) clearInterval(spotifyPollInterval);
+        const intervalo = document.hidden ? SPOTIFY_POLL_MS_OCULTO : SPOTIFY_POLL_MS_ACTIVO;
+        spotifyPollInterval = setInterval(actualizarSpotifyNowPlaying, intervalo);
+    }
+
+    function initSpotify() {
+        const connectBtn = document.getElementById('spotifyConnectBtn');
+        const disconnectBtn = document.getElementById('spotifyDisconnectBtn');
+        if (connectBtn) connectBtn.addEventListener('click', iniciarConexionSpotify);
+        if (disconnectBtn) disconnectBtn.addEventListener('click', desconectarSpotify);
+
+        actualizarUISpotifyConexion();
+        escucharSpotifyNowPlayingDeUid(currentUser ? currentUser.uid : null);
+
+        actualizarSpotifyNowPlaying();
+        reiniciarPollingSpotify();
+
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) actualizarSpotifyNowPlaying();
+            reiniciarPollingSpotify();
+        });
+
+        // Cuando la ventana emergente de conexión avisa que ya terminó,
+        // refrescamos el estado en la pestaña principal sin recargar
+        // nada ni volver a pedir el login.
+        window.addEventListener('message', function(e) {
+            if (e.origin !== window.location.origin) return;
+            if (!e.data || e.data.tipo !== 'botardo-spotify-conectado') return;
+            actualizarUISpotifyConexion();
+            actualizarSpotifyNowPlaying();
+        });
+    }
+
+    // Maneja el regreso de Spotify con "?code=...": tanto si ocurre
+    // dentro de la ventana emergente (caso normal) como si ocurre en la
+    // pestaña principal (respaldo cuando el navegador bloqueó el popup).
+    // El "code" es un dato sensible de un solo uso, así que lo primero
+    // que hacemos siempre es limpiarlo de la URL, antes incluso de
+    // esperar la respuesta de Spotify.
+    async function manejarRedireccionSpotify() {
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
+        if (!code) return;
+
+        const urlLimpia = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, urlLimpia);
+
+        if (ES_VENTANA_EMERGENTE_SPOTIFY) {
+            mostrarMensajePopupSpotify('Conectando tu cuenta de Spotify...');
+            const ok = await intercambiarCodigoSpotify(code);
+            try {
+                window.opener.postMessage({ tipo: 'botardo-spotify-conectado', ok: ok }, window.location.origin);
+            } catch (e) { /* ignorar */ }
+            mostrarMensajePopupSpotify(ok
+                ? '¡Listo! Ya puedes cerrar esta ventana.'
+                : 'No se pudo conectar. Cierra esta ventana e inténtalo de nuevo.');
+            setTimeout(function() { window.close(); }, ok ? 900 : 2500);
+            return;
+        }
+
+        await intercambiarCodigoSpotify(code);
+        actualizarUISpotifyConexion();
     }
 
     function updateStats() {
@@ -1514,7 +2214,11 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     name: name,
                     username: username,
                     email: email,
-                    createdAt: (existingData && existingData.createdAt) || new Date().toISOString()
+                    createdAt: (existingData && existingData.createdAt) || new Date().toISOString(),
+                    botardoId: (existingData && existingData.botardoId) || generarBotardoId(),
+                    grado: (existingData && existingData.grado) || '',
+                    gradoChanged: !!(existingData && existingData.gradoChanged),
+                    colegio: (existingData && existingData.colegio) || ''
                 });
 
                 const esCuentaNueva = !existingData;
@@ -1552,15 +2256,21 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 const data = snap.data();
                 if (data.name && data.username && data.email) {
                     currentUserData = data;
+                    marcarPasoCarga('datos', 'done');
+                    marcarPasoCarga('perfil', 'active');
+                    actualizarTextoCarga('Preparando tu perfil...');
                     init();
                     return;
                 }
+                ocultarAppLoader();
                 showCompleteDataModal(user, data);
                 return;
             }
+            ocultarAppLoader();
             showCompleteDataModal(user, null);
         } catch (err) {
             console.error('Error leyendo datos de Firestore:', err);
+            ocultarAppLoader();
             showCompleteDataModal(user, null);
         }
     }
@@ -2256,7 +2966,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         { keywords: ['perfil', 'mi perfil', 'cuenta'], target: 'section-perfil' },
         { keywords: ['mensajes', 'mensaje', 'chat', 'chats', 'conversaciones'], target: 'section-mensajes' },
         { keywords: ['horario', 'clases', 'clase', 'materias'], target: 'section-clases' },
-        { keywords: ['camara', 'reconocimiento facial'], target: 'section-camara' },
+        { keywords: ['salon', 'asistencia', 'asistencias', 'reconocimiento facial'], target: 'section-camara' },
         { keywords: ['proyectos', 'proyecto'], target: 'section-proyectos' },
         { keywords: ['estadisticas', 'estadistica', 'graficos'], target: 'section-estadisticas' },
         { keywords: ['configuracion', 'ajustes', 'seguridad', 'notificaciones'], target: 'section-configuracion' }
@@ -2300,7 +3010,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         'section-perfil': 'Perfil',
         'section-mensajes': 'Mensajes',
         'section-clases': 'Horario',
-        'section-camara': 'Cámara',
+        'section-camara': 'Salón',
         'section-proyectos': 'Proyectos',
         'section-estadisticas': 'Estadísticas',
         'section-configuracion': 'Configuración'
@@ -2570,6 +3280,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         aplicarBannerPerfilView(perfilImagenes.banner);
         aplicarAvatarPerfilView(perfilImagenes.avatar);
         actualizarBadgeClaseActual();
+        escucharSpotifyNowPlayingDeUid(currentUser ? currentUser.uid : null);
 
         const tabsRow = document.getElementById('profileTabs');
         if (tabsRow) tabsRow.style.display = '';
@@ -2599,6 +3310,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         viewingProfileUid = uid;
         viewingProfileData = { name: name, username: username };
+        escucharSpotifyNowPlayingDeUid(uid);
 
         const view = document.getElementById('profileView');
         if (view) view.classList.remove('is-own');
@@ -2702,7 +3414,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     const ASSISTANT_SYSTEM_INSTRUCTION = `Eres "Botardo", el asistente virtual dentro del dashboard de Botardo Face App, una aplicación educativa de reconocimiento facial creada por estudiantes del Colegio Luis Madina (Colombia) para el taller de Sistemas Informáticos.
 
 CONOCIMIENTO DE LA APLICACIÓN (úsalo para responder con precisión):
-- Secciones del panel lateral: Panel (resumen y actividad reciente), Perfil (perfil propio y de otros usuarios, con notas, horario, materias, seguidores, seguidos y amigos), Mensajes (conversaciones con otras personas; tú, la IA, se accede desde el botón flotante del asistente en cualquier sección, no desde Mensajes), Horario (crear y editar el horario de clases semanal), Cámara (demo de reconocimiento facial), Estadísticas (datos de uso de la cuenta), Configuración (seguridad, notificaciones, apariencia, datos, uso de IA) y Proyectos (proyectos propios de Botardo).
+- Secciones del panel lateral: Panel (resumen y actividad reciente), Perfil (perfil propio y de otros usuarios, con notas, horario, materias, seguidores, seguidos y amigos), Mensajes (conversaciones con otras personas; tú, la IA, se accede desde el botón flotante del asistente en cualquier sección, no desde Mensajes), Horario (crear y editar el horario de clases semanal), Salón (estadísticas de asistencia al colegio registradas por el reconocimiento facial: asistencias totales, racha, colegio y grado, y configuración del colegio/grado), Estadísticas (datos de uso de la cuenta), Configuración (seguridad, notificaciones, apariencia, datos, uso de IA) y Proyectos (proyectos propios de Botardo).
 - Perfil: cada usuario tiene nombre, nombre de usuario, descripción (bio), un emoji de estado, notas/publicaciones, horario de clases, materias, seguidores y seguidos. Dos usuarios son "amigos" cuando se siguen mutuamente.
 - Mensajería: solo puedes escribirle a alguien si esa persona te sigue a ti.
 - Tienes un límite de 5 mensajes diarios contigo (la IA) para cuentas gratuitas; los usuarios Premium (función futura) no tendrán límite. Un mensaje solo cuenta contra ese límite si logras responder; si hay un error técnico, no se descuenta.
@@ -2714,7 +3426,7 @@ NAVEGACIÓN: si el usuario te pide ir a una sección de la app (por ejemplo "ll�
 [[NAV:section-perfil]] para Perfil
 [[NAV:section-mensajes]] para Mensajes
 [[NAV:section-clases]] para Horario
-[[NAV:section-camara]] para Cámara
+[[NAV:section-camara]] para Salón
 [[NAV:section-estadisticas]] para Estadísticas
 [[NAV:section-configuracion]] para Configuración
 [[NAV:section-proyectos]] para Proyectos
@@ -3223,98 +3935,127 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         });
     }
 
-    let stream = null;
-    let cameraActive = false;
-    let facingMode = 'user';
-    let captureCount = 0;
+    // --- Salón: asistencias registradas por el reconocimiento facial ---
+    //
+    // Estructura en la Realtime Database (simplificada a propósito, para
+    // que el compañero de hardware/Python la pueda escribir fácilmente
+    // por REST sin lógica compleja de su lado):
+    //
+    //   asistencias/
+    //     {colegioSlug}/
+    //       {gradoSlug}/
+    //         {botardoId}/
+    //           {AAAA-MM-DD}: { hora: "07:32", estado: "presente" }
+    //
+    // - {colegioSlug} y {gradoSlug} salen del nombre del colegio/grado ya
+    //   guardados en el perfil del usuario (misma función slugColegio()
+    //   que se usa para crear el documento del colegio en Firestore).
+    // - {botardoId} es el ID único generado al crear la cuenta (ver
+    //   generarBotardoId / ofuscarId más arriba). Esta es justamente la
+    //   "función única" que se mencionó para este ID: el reconocedor
+    //   facial identifica a la persona y solo necesita conocer su
+    //   botardoId para saber dónde escribir su asistencia, sin tener que
+    //   manejar el UID interno de Firebase Auth.
+    // - El equipo de hardware solo necesita hacer un PUT/PATCH sencillo a
+    //   esa ruta con la REST API de la Realtime Database, algo como:
+    //   PUT https://faceid-50a95-default-rtdb.firebaseio.com/asistencias/{colegioSlug}/{gradoSlug}/{botardoId}/{fecha}.json
+    //   Body: {"hora":"07:32","estado":"presente"}
 
-    function updateCameraStatus(active, message) {
-        const dot = cameraStatus.querySelector('.status-dot');
-        const text = cameraStatus.querySelector('span');
-        if (active) {
-            dot.className = 'status-dot active';
-            text.textContent = message || 'En línea';
-        } else {
-            dot.className = 'status-dot inactive';
-            text.textContent = message || 'Desconectada';
-        }
+    function formatearFechaCorta(fechaStr) {
+        const partes = fechaStr.split('-');
+        if (partes.length !== 3) return fechaStr;
+        const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        return partes[2] + ' ' + meses[parseInt(partes[1], 10) - 1];
     }
 
-    async function startCamera() {
+    function calcularRachaDiasHabiles(fechas) {
+        // Cuenta días consecutivos hacia atrás desde hoy, saltándose
+        // fines de semana (sábado/domingo), en los que sí hay asistencia.
+        let racha = 0;
+        let cursor = new Date();
+        for (let i = 0; i < 60; i++) {
+            const diaSemana = cursor.getDay();
+            if (diaSemana === 0 || diaSemana === 6) {
+                cursor.setDate(cursor.getDate() - 1);
+                continue;
+            }
+            const fechaStr = cursor.getFullYear() + '-' + String(cursor.getMonth() + 1).padStart(2, '0') + '-' + String(cursor.getDate()).padStart(2, '0');
+            if (fechas.indexOf(fechaStr) !== -1) {
+                racha++;
+                cursor.setDate(cursor.getDate() - 1);
+            } else {
+                break;
+            }
+        }
+        return racha;
+    }
+
+    async function cargarAsistenciasSalon() {
+        const elTotales = document.getElementById('salonAsistenciasTotales');
+        const elRacha = document.getElementById('salonRacha');
+        const elSemana = document.getElementById('salonEstaSemana');
+        const elUltima = document.getElementById('salonUltimaAsistencia');
+        const elColegio = document.getElementById('salonColegioTexto');
+        const elGrado = document.getElementById('salonGradoTexto');
+        const elEstado = document.getElementById('salonEstadoReconocedor');
+        const elHistorial = document.getElementById('salonHistorialLista');
+
+        if (elColegio) elColegio.textContent = (currentUserData && currentUserData.colegio) || 'Sin definir';
+        if (elGrado) elGrado.textContent = (currentUserData && currentUserData.grado) || 'Sin definir';
+
+        if (!currentUserData || !currentUserData.colegio || !currentUserData.grado || !currentUserData.botardoId) {
+            if (elEstado) elEstado.textContent = 'Configura tu colegio y grado para empezar a recibir asistencias';
+            return;
+        }
+
+        const colegioSlug = slugColegio(currentUserData.colegio);
+        const gradoSlug = slugColegio(currentUserData.grado);
+        const rutaAsistencias = ref(rtdb, `asistencias/${colegioSlug}/${gradoSlug}/${currentUserData.botardoId}`);
+
         try {
-            if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+            const snap = await get(rutaAsistencias);
+            if (!snap.exists()) {
+                if (elEstado) elEstado.textContent = 'Sin datos aún: el reconocedor facial todavía no te ha registrado';
+                return;
+            }
+            const datos = snap.val();
+            const fechas = Object.keys(datos).sort();
+            const totales = fechas.length;
 
-            const constraints = { video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-            videoFeed.srcObject = stream;
-            await videoFeed.play();
+            const hoy = new Date();
+            const inicioSemana = new Date(hoy);
+            inicioSemana.setDate(hoy.getDate() - hoy.getDay());
+            inicioSemana.setHours(0, 0, 0, 0);
+            const estaSemana = fechas.filter(function(f) { return new Date(f + 'T00:00:00') >= inicioSemana; }).length;
 
-            videoFeed.style.display = 'block';
-            overlayCanvas.style.display = 'none';
-            videoPlaceholder.style.display = 'none';
-            cameraActive = true;
+            const ultimaFecha = fechas[fechas.length - 1];
+            const racha = calcularRachaDiasHabiles(fechas);
 
-            startCameraBtn.innerHTML = '<i class="fas fa-stop"></i> Detener cámara';
-            captureBtn.disabled = false;
-            switchCameraBtn.disabled = false;
-            updateCameraStatus(true, 'En línea');
+            if (elTotales) elTotales.textContent = totales;
+            if (elRacha) elRacha.textContent = racha;
+            if (elSemana) elSemana.textContent = estaSemana;
+            if (elUltima) elUltima.textContent = ultimaFecha ? formatearFechaCorta(ultimaFecha) : '--';
+            if (elEstado) elEstado.textContent = 'Conectado: recibiendo asistencias correctamente';
 
-            setTimeout(() => { if (cameraActive) cameraResult.style.display = 'block'; }, 2000);
+            if (elHistorial) {
+                const ultimasDiez = fechas.slice(-10).reverse();
+                elHistorial.innerHTML = ultimasDiez.map(function(f) {
+                    const registro = datos[f];
+                    return `
+                        <div class="activity-item">
+                            <span class="activity-dot" style="background:#2e7d32;"></span>
+                            <div class="activity-content">
+                                <p><strong>Asistencia registrada</strong> — ${escapeHtml(registro.estado || 'presente')}</p>
+                                <span class="activity-time">${escapeHtml(f)}${registro.hora ? ' · ' + escapeHtml(registro.hora) : ''}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
         } catch (err) {
-            console.error('Error al iniciar cámara:', err);
-            alert('No se pudo acceder a la cámara. Por favor, verifica los permisos.');
-            updateCameraStatus(false, 'Error');
+            console.error('Error cargando asistencias:', err);
+            if (elEstado) elEstado.textContent = 'No se pudieron cargar las asistencias';
         }
-    }
-
-    function stopCamera() {
-        if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-        videoFeed.style.display = 'none';
-        videoFeed.srcObject = null;
-        videoPlaceholder.style.display = 'flex';
-        cameraActive = false;
-        cameraResult.style.display = 'none';
-
-        startCameraBtn.innerHTML = '<i class="fas fa-play"></i> Iniciar cámara';
-        captureBtn.disabled = true;
-        switchCameraBtn.disabled = true;
-        updateCameraStatus(false, 'Desconectada');
-    }
-
-    if (startCameraBtn) {
-        startCameraBtn.addEventListener('click', function() {
-            if (cameraActive) stopCamera(); else startCamera();
-        });
-    }
-
-    if (captureBtn) {
-        captureBtn.addEventListener('click', function() {
-            if (!cameraActive || !videoFeed.srcObject) return;
-
-            captureCount++;
-            const canvas = document.createElement('canvas');
-            canvas.width = videoFeed.videoWidth || 640;
-            canvas.height = videoFeed.videoHeight || 480;
-            const ctx = canvas.getContext('2d');
-
-            if (facingMode === 'user') { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
-            ctx.drawImage(videoFeed, 0, 0, canvas.width, canvas.height);
-
-            const link = document.createElement('a');
-            link.download = `captura_${Date.now()}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
-
-            cameraResult.style.display = 'block';
-            cameraResult.querySelector('.result-content span').textContent = `Captura #${captureCount} guardada correctamente`;
-        });
-    }
-
-    if (switchCameraBtn) {
-        switchCameraBtn.addEventListener('click', function() {
-            facingMode = facingMode === 'user' ? 'environment' : 'user';
-            if (cameraActive) startCamera();
-        });
     }
 
     const projectsInfoBtn = document.getElementById('projectsInfoBtn');
@@ -4049,7 +4790,8 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     window.cerrarModal = cerrarModal;
     window.guardarClaseFromModal = guardarClaseFromModal;
 
-    function init() {
+    async function init() {
+        await manejarRedireccionSpotify();
         loadUserData();
         loadProjects();
         initClases();
@@ -4069,6 +4811,9 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         initApariencia();
         initEditorImagenesPerfil();
         initCambioNombreUsuario();
+        initIdUnico();
+        initGradoColegio();
+        initSpotify();
         renderActivityTimeline();
 
         const headerSearchInput = document.getElementById('searchInput');
@@ -4102,7 +4847,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             if (!e.target.closest('.header-search')) ocultarSugerencias();
         });
 
-        updateCameraStatus(false, 'Desconectada');
+        cargarAsistenciasSalon();
 
         const changePasswordBtn = document.getElementById('changePasswordBtn');
         if (changePasswordBtn) changePasswordBtn.addEventListener('click', openChangePasswordModal);
@@ -4132,6 +4877,11 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                 if (hash === 'mensajes') switchMessagesTab('conversaciones');
             }
         }
+
+        marcarPasoCarga('perfil', 'done');
+        marcarPasoCarga('listo', 'done');
+        actualizarTextoCarga('¡Todo listo!');
+        setTimeout(ocultarAppLoader, 250);
     }
 
     let resizeTimer;
@@ -4150,10 +4900,28 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
 
     onAuthStateChanged(auth, function(user) {
         if (!user) {
+            if (ES_VENTANA_EMERGENTE_SPOTIFY) {
+                // La ventana emergente de Spotify no necesita loguearse
+                // de nuevo: si por alguna razón (cookies bloqueadas, etc.)
+                // no hay sesión ahí, simplemente avisamos en el popup en
+                // vez de mandarlo a la pantalla de login.
+                mostrarMensajePopupSpotify('No se pudo verificar tu sesión. Cierra esta ventana y vuelve a intentarlo desde el sitio.');
+                return;
+            }
             window.location.href = '../html/login.html';
             return;
         }
         currentUser = user;
+        if (ES_VENTANA_EMERGENTE_SPOTIFY) {
+            // Este es el popup de conexión: solo hace el intercambio de
+            // tokens con Spotify y se cierra solo, sin montar todo el
+            // dashboard ni tocar la pestaña principal del sitio.
+            manejarRedireccionSpotify();
+            return;
+        }
+        marcarPasoCarga('auth', 'done');
+        marcarPasoCarga('datos', 'active');
+        actualizarTextoCarga('Cargando tus datos...');
         loadOrRequestUserData(user);
     });
 
