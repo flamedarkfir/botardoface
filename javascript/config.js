@@ -609,6 +609,25 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         `;
     }
 
+    // MUY IMPORTANTE: la conexión de Spotify tiene que quedar ligada a
+    // la CUENTA de Botardo Face (currentUser.uid), no al navegador.
+    // Antes se guardaba en una sola llave fija de localStorage, así que
+    // si en el mismo navegador entrabas con otra cuenta, esa cuenta
+    // "heredaba" la conexión de Spotify de la cuenta anterior sin haberla
+    // conectado de verdad. Por eso el nombre de la llave incluye el uid
+    // del usuario que inició sesión.
+    function claveTokensSpotifyLocal() {
+        const uid = currentUser ? currentUser.uid : 'sin-sesion';
+        return SPOTIFY_LS_KEY + ':' + uid;
+    }
+
+    // Limpieza única de la llave vieja (compartida entre cuentas) que
+    // pudo haber quedado guardada en el navegador con versiones
+    // anteriores de la app.
+    (function limpiarTokenSpotifyLegado() {
+        try { localStorage.removeItem(SPOTIFY_LS_KEY); } catch (e) { /* ignorar */ }
+    })();
+
     function base64UrlEncode(bytes) {
         let binary = '';
         bytes.forEach(function(b) { binary += String.fromCharCode(b); });
@@ -630,7 +649,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     function leerTokensSpotifyLocal() {
         try {
-            const raw = localStorage.getItem(SPOTIFY_LS_KEY);
+            const raw = localStorage.getItem(claveTokensSpotifyLocal());
             return raw ? JSON.parse(raw) : null;
         } catch (e) {
             return null;
@@ -639,14 +658,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     function guardarTokensSpotifyLocal(tokens) {
         try {
-            localStorage.setItem(SPOTIFY_LS_KEY, JSON.stringify(tokens));
+            localStorage.setItem(claveTokensSpotifyLocal(), JSON.stringify(tokens));
         } catch (e) {
             console.error('No se pudo guardar el token de Spotify localmente:', e);
         }
     }
 
     function borrarTokensSpotifyLocal() {
-        try { localStorage.removeItem(SPOTIFY_LS_KEY); } catch (e) { /* ignorar */ }
+        try { localStorage.removeItem(claveTokensSpotifyLocal()); } catch (e) { /* ignorar */ }
     }
 
     async function guardarRefreshTokenEnFirestore(refreshToken) {
@@ -806,14 +825,18 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     async function desconectarSpotify() {
         if (!confirm('¿Quieres desconectar tu cuenta de Spotify?')) return;
         borrarTokensSpotifyLocal();
+        if (currentUserData) currentUserData.spotifyRefreshToken = null;
+        // Reflejamos el cambio en la interfaz de inmediato, sin esperar
+        // a que terminen las peticiones a Firestore/Realtime Database.
+        actualizarUISpotifyConexion();
+        pintarSpotifyNowPlaying(null);
+        if (spotifyPollInterval) clearInterval(spotifyPollInterval);
         try {
             await setDoc(doc(db, 'users', currentUser.uid), { spotifyRefreshToken: null }, { merge: true });
-            if (currentUserData) currentUserData.spotifyRefreshToken = null;
         } catch (err) {
             console.error('Error desconectando Spotify:', err);
         }
         try { await set(ref(rtdb, 'spotifyNowPlaying/' + currentUser.uid), null); } catch (e) { /* ignorar */ }
-        actualizarUISpotifyConexion();
     }
 
     function actualizarUISpotifyConexion() {
@@ -860,7 +883,14 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 artista: (data.item.artists || []).map(function(a) { return a.name; }).join(', '),
                 actualizadoEn: Date.now()
             });
-            onDisconnect(miNowPlayingRef).remove();
+            // Antes se borraba automáticamente apenas cerrabas la pestaña
+            // (onDisconnect().remove()). Ahora se deja la última canción
+            // guardada tal cual: si cierras la app, tu perfil sigue
+            // mostrando lo último que estabas escuchando en vez de
+            // quedar vacío. Como no hay nada corriendo en segundo plano
+            // que la siga actualizando mientras no tengas la app abierta,
+            // pintarSpotifyNowPlaying() la marca como "última vez" pasado
+            // un rato, para no dar a entender que sigue sonando en vivo.
         } catch (err) {
             console.error('Error consultando reproducción actual de Spotify:', err);
         }
@@ -869,29 +899,66 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let spotifyPollInterval = null;
     let nowPlayingListenerRef = null;
 
+    // Si la última actualización es reciente (la app sigue abierta en
+    // algún lado, o se cerró hace muy poco) se muestra como "en vivo"
+    // con el ecualizador animado. Si ya pasó un rato, se seguimos
+    // mostrando la canción (ya no se borra sola) pero como "última vez",
+    // sin el pulso animado, para ser honestos con quien lo ve.
+    const SPOTIFY_NOW_PLAYING_LIVE_MS = 60 * 1000;
+
+    function formatoTiempoTranscurrido(ms) {
+        const segundos = Math.floor(ms / 1000);
+        if (segundos < 60) return 'hace un momento';
+        const minutos = Math.floor(segundos / 60);
+        if (minutos < 60) return `hace ${minutos} min`;
+        const horas = Math.floor(minutos / 60);
+        if (horas < 24) return `hace ${horas} h`;
+        const dias = Math.floor(horas / 24);
+        return `hace ${dias} d`;
+    }
+
     function pintarSpotifyNowPlaying(data) {
         const bloque = document.getElementById('profileSpotifyNow');
         const texto = document.getElementById('profileSpotifyNowText');
         if (!bloque || !texto) return;
         if (data && data.cancion) {
-            texto.textContent = data.cancion + (data.artista ? ' — ' + data.artista : '');
+            const transcurrido = Date.now() - (data.actualizadoEn || 0);
+            const esReciente = transcurrido < SPOTIFY_NOW_PLAYING_LIVE_MS;
+            const cancionTexto = data.cancion + (data.artista ? ' — ' + data.artista : '');
+            texto.textContent = esReciente ? cancionTexto : (cancionTexto + ' · ' + formatoTiempoTranscurrido(transcurrido));
+            bloque.classList.toggle('spotify-now-desactualizado', !esReciente);
             bloque.style.display = 'flex';
         } else {
             bloque.style.display = 'none';
         }
     }
 
+    let ultimoNowPlayingData = null;
+    let nowPlayingRefreshInterval = null;
+
     function escucharSpotifyNowPlayingDeUid(uid) {
         if (nowPlayingListenerRef) {
             off(nowPlayingListenerRef);
             nowPlayingListenerRef = null;
         }
+        if (nowPlayingRefreshInterval) {
+            clearInterval(nowPlayingRefreshInterval);
+            nowPlayingRefreshInterval = null;
+        }
+        ultimoNowPlayingData = null;
         pintarSpotifyNowPlaying(null);
         if (!uid) return;
         nowPlayingListenerRef = ref(rtdb, 'spotifyNowPlaying/' + uid);
         onValue(nowPlayingListenerRef, function(snap) {
-            pintarSpotifyNowPlaying(snap.exists() ? snap.val() : null);
+            ultimoNowPlayingData = snap.exists() ? snap.val() : null;
+            pintarSpotifyNowPlaying(ultimoNowPlayingData);
         });
+        // Como ya no se borra sola al desconectarse, el texto "hace X
+        // min" necesita refrescarse solo de vez en cuando aunque no
+        // llegue ningún dato nuevo (la persona sigue con la app cerrada).
+        nowPlayingRefreshInterval = setInterval(function() {
+            if (ultimoNowPlayingData) pintarSpotifyNowPlaying(ultimoNowPlayingData);
+        }, 30000);
     }
 
     // Mientras la pestaña está visible consultamos seguido para que se
@@ -932,6 +999,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             if (!e.data || e.data.tipo !== 'botardo-spotify-conectado') return;
             actualizarUISpotifyConexion();
             actualizarSpotifyNowPlaying();
+            reiniciarPollingSpotify();
         });
     }
 
@@ -3303,8 +3371,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     }
 
     async function mostrarPerfilDeUsuario(uid, name, username) {
-        if (!followingSet.has(uid)) {
-            alert('Solo puedes ver el perfil de las cuentas que sigues.');
+        // Solo se puede ver el perfil completo de alguien si hay algún
+        // vínculo real: lo sigues, te sigue, o ambas cosas (amigos). Un
+        // desconocido sin ninguna relación no puede entrar aquí.
+        const hayRelacion = followingSet.has(uid) || followersSet.has(uid);
+        if (!hayRelacion) {
+            alert('Solo puedes ver el perfil de tus amigos, o de cuentas que te siguen o que sigues.');
             return;
         }
 
@@ -3322,6 +3394,16 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         document.getElementById('profileUsername').textContent = '@' + username;
         document.getElementById('profileBio').textContent = 'Cargando...';
         renderProfileActionsViewing(uid, name, username);
+
+        // El colegio y el grado NUNCA se muestran en el perfil de otra
+        // persona (solo el propio dueño los ve, en su propio perfil).
+        // Combinado con las materias y los seguidores, esa información
+        // podría usarse para identificar a un menor específico —en qué
+        // colegio, en qué grado y con quién se relaciona—, así que se
+        // oculta por completo aquí sin excepción, sin importar la
+        // relación de amistad que haya.
+        const metaRow = document.getElementById('profileMetaRow');
+        if (metaRow) metaRow.style.display = 'none';
 
         const postsHeaderRow = document.getElementById('postsHeaderRow');
         if (postsHeaderRow) postsHeaderRow.innerHTML = '<h3><i class="fas fa-newspaper"></i> Notas</h3>';

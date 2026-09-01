@@ -4450,6 +4450,23 @@ html[data-tema="oscuro"] .app-loader-spinner {
     width: fit-content;
 }
 
+.profile-spotify-now.spotify-now-desactualizado {
+    background: rgba(120, 120, 120, 0.1);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+}
+
+.profile-spotify-now.spotify-now-desactualizado i,
+.profile-spotify-now.spotify-now-desactualizado span:not(.spotify-eq) {
+    color: var(--text-secondary);
+}
+
+.profile-spotify-now.spotify-now-desactualizado .spotify-eq span {
+    animation: none;
+    background: var(--text-secondary);
+    transform: scaleY(0.35);
+}
+
 .spotify-eq {
     display: inline-flex;
     align-items: flex-end;
