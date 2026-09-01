@@ -3370,6 +3370,16 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
     }
 
+    function mostrarBarraCargaPerfil() {
+        const barra = document.getElementById('profileLoadingBar');
+        if (barra) barra.classList.add('activa');
+    }
+
+    function ocultarBarraCargaPerfil() {
+        const barra = document.getElementById('profileLoadingBar');
+        if (barra) barra.classList.remove('activa');
+    }
+
     async function mostrarPerfilDeUsuario(uid, name, username) {
         // Solo se puede ver el perfil completo de alguien si hay algún
         // vínculo real: lo sigues, te sigue, o ambas cosas (amigos). Un
@@ -3413,6 +3423,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         switchProfileTab('publicaciones');
 
+        mostrarBarraCargaPerfil();
         try {
             const [perfilSnap, postsSnap, clasesSnap, followersSnap, followingSnap] = await Promise.all([
                 get(ref(rtdb, 'users/' + uid + '/perfil')),
@@ -3483,6 +3494,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         } catch (err) {
             console.error('Error cargando perfil de usuario:', err);
             document.getElementById('profileBio').textContent = 'No se pudo cargar este perfil.';
+        } finally {
+            ocultarBarraCargaPerfil();
         }
     }
 
@@ -4188,16 +4201,12 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
 
     function aplicarApariencia() {
         const root = document.documentElement;
-        let temaEfectivo = apariencia.tema;
-        if (temaEfectivo === 'sistema') {
-            temaEfectivo = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'oscuro' : 'claro';
-        }
-        root.setAttribute('data-tema', temaEfectivo);
+        // El modo oscuro se quitó de la app (no se veía bien), así que
+        // siempre se aplica el tema claro sin importar lo que haya
+        // quedado guardado de antes en la cuenta.
+        root.setAttribute('data-tema', 'claro');
         root.style.setProperty('--accent-user', apariencia.acento || '#1a2332');
 
-        document.querySelectorAll('.theme-option').forEach(function(btn) {
-            btn.classList.toggle('active', btn.dataset.tema === apariencia.tema);
-        });
         document.querySelectorAll('.accent-swatch').forEach(function(btn) {
             btn.classList.toggle('active', btn.dataset.accent === apariencia.acento);
         });
@@ -4311,15 +4320,6 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     }
 
     function initApariencia() {
-        document.querySelectorAll('.theme-option').forEach(function(btn) {
-            if (btn._wired) return;
-            btn._wired = true;
-            btn.addEventListener('click', function() {
-                apariencia.tema = this.dataset.tema;
-                aplicarApariencia();
-                guardarApariencia();
-            });
-        });
         document.querySelectorAll('.accent-swatch').forEach(function(btn) {
             if (btn._wired) return;
             btn._wired = true;
