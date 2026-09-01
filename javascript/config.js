@@ -63,6 +63,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let activityLog = [];
     let onlineUidsSet = new Set();
     let contactEmojis = {};
+    let contactAvatars = {};
     let attachedChatListeners = new Set();
     let userStats = { loginCount: 0, exportCount: 0, aiMessages: 0, aiChats: 0, lastLogin: null };
     let apariencia = { tema: 'claro', acento: '#1a2332' };
@@ -1010,6 +1011,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             const esReciente = transcurrido < SPOTIFY_NOW_PLAYING_LIVE_MS;
             const cancionTexto = data.cancion + (data.artista ? ' — ' + data.artista : '');
             texto.textContent = esReciente ? cancionTexto : (cancionTexto + ' · ' + formatoTiempoTranscurrido(transcurrido));
+            texto.title = cancionTexto;
             bloque.classList.toggle('spotify-now-desactualizado', !esReciente);
             // position:absolute (overlay): aparece/desaparece sin mover
             // nada del resto del perfil, ni vertical ni horizontalmente.
@@ -1377,6 +1379,18 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         // sea el mismo tier que ya tenía.
         void avatarBox.offsetWidth;
         avatarBox.classList.add('emoji-reveal-anim');
+
+        // La insignia del emoji también crece según la exclusividad del
+        // resultado (más raro = más grande), pero sin taparle nunca la
+        // foto de perfil: ver .emoji-tier-N en dashboard.css, que además
+        // de agrandar el emoji lo va corriendo hacia afuera de la
+        // esquina. Esto solo se aplica al entrar a un perfil (aquí),
+        // nunca en avatares chicos de otras partes de la app.
+        const emojiBadge = document.getElementById('statusEmoji');
+        if (emojiBadge) {
+            for (let t = 2; t <= 5; t++) emojiBadge.classList.remove('emoji-tier-' + t);
+            if (tier >= 2) emojiBadge.classList.add('emoji-tier-' + tier);
+        }
     }
 
     // Elige un emoji al azar respetando los pesos (el primero de la
@@ -2936,10 +2950,28 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         return contactEmojis[uid];
     }
 
+    // Igual que el emoji, pero para la foto de perfil: se usa para que
+    // la lista de chats muestre la foto real de cada contacto (con su
+    // aro de exclusividad) en vez de solo un círculo con la inicial.
+    async function obtenerAvatarUsuario(uid) {
+        if (uid in contactAvatars) return contactAvatars[uid];
+        try {
+            const snap = await get(ref(rtdb, 'users/' + uid + '/perfil/avatar'));
+            contactAvatars[uid] = snap.exists() ? snap.val() : null;
+        } catch (err) {
+            contactAvatars[uid] = null;
+        }
+        return contactAvatars[uid];
+    }
+
     function precargarEmojis(list) {
-        const faltantes = (list || []).filter(function(u) { return !(u.uid in contactEmojis); });
-        if (faltantes.length === 0) return;
-        Promise.all(faltantes.map(function(u) { return obtenerEmojiUsuario(u.uid); })).then(function() {
+        const faltanEmoji = (list || []).filter(function(u) { return !(u.uid in contactEmojis); });
+        const faltanAvatar = (list || []).filter(function(u) { return !(u.uid in contactAvatars); });
+        if (faltanEmoji.length === 0 && faltanAvatar.length === 0) return;
+        Promise.all(
+            faltanEmoji.map(function(u) { return obtenerEmojiUsuario(u.uid); })
+                .concat(faltanAvatar.map(function(u) { return obtenerAvatarUsuario(u.uid); }))
+        ).then(function() {
             renderChatContacts();
             if (currentChatUid) actualizarEstadoChatHeader(currentChatUid);
         });
@@ -3036,6 +3068,25 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
     }
 
+    // Arma el círculo de avatar para la lista de chats/encabezado de chat:
+    // foto real si el contacto ya tiene una guardada (si no, la inicial
+    // de su nombre como antes) y el aro de exclusividad correspondiente
+    // a su emoji, en versión miniatura (sin la animación de "abrir
+    // perfil", que se queda solo para la vista de perfil completa).
+    function htmlAvatarContacto(uid, nombre) {
+        const avatar = contactAvatars[uid];
+        const emoji = contactEmojis[uid] || '';
+        const tier = emoji ? tierVisualEmoji(emoji) : 0;
+        const tierClass = tier > 0 ? ' avatar-tier-' + tier : '';
+        const inicial = escapeHtml(nombre.charAt(0).toUpperCase());
+        if (avatar && avatar.tipo === 'imagen' && avatar.valor) {
+            const posX = avatar.posX != null ? avatar.posX : 50;
+            const posY = avatar.posY != null ? avatar.posY : 50;
+            return `<div class="chat-contact-avatar${tierClass}"><img src="${PROFILE_BG_PATH}${avatar.valor}.webp" alt="" style="object-position:${posX}% ${posY}%;" /></div>`;
+        }
+        return `<div class="chat-contact-avatar${tierClass}">${inicial}</div>`;
+    }
+
     function renderChatContacts(filtro) {
         const container = document.getElementById('chatContactsList');
         if (!container) return;
@@ -3063,7 +3114,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             return `
                 <div class="chat-contact-item${activeClass}" data-uid="${u.uid}" onclick="abrirChat('${u.uid}', '${escapeForAttr(u.name)}', '${u.username}')">
                     <div class="chat-contact-avatar-wrap">
-                        <div class="chat-contact-avatar">${u.name.charAt(0).toUpperCase()}</div>
+                        ${htmlAvatarContacto(u.uid, u.name)}
                         ${emoji ? `<span class="chat-contact-emoji">${emoji}</span>` : ''}
                         <span class="chat-contact-dot ${online ? 'online' : 'offline'}"></span>
                     </div>
@@ -3135,7 +3186,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             <div class="chat-header-user">
                 <button class="chat-back-btn" onclick="cerrarChatMobile()" aria-label="Volver"><i class="fas fa-arrow-left"></i></button>
                 <div class="chat-contact-avatar-wrap">
-                    <div class="chat-contact-avatar">${name.charAt(0).toUpperCase()}</div>
+                    ${htmlAvatarContacto(uid, name)}
                     <span class="chat-contact-dot ${online ? 'online' : 'offline'}"></span>
                 </div>
                 <div>

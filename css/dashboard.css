@@ -1311,13 +1311,25 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.75rem;
     padding: 1.2rem 1.5rem;
     border-bottom: 1px solid var(--border-color);
 }
 
+/* Antes, si el título era largo (o la pantalla angosta), el h3 no se
+   encogía (los flex items no se achican de más por defecto) y el
+   texto terminaba saliéndose del modal o empujando la X afuera.
+   Ahora se acomoda solo: se puede angostar (min-width:0), el texto
+   pasa a la siguiente línea en vez de desbordar, y el tamaño de letra
+   se ajusta un poco según el ancho de pantalla. */
 .modal-header h3 {
-    font-size: 1.1rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: clamp(0.95rem, 3.2vw, 1.1rem);
     font-weight: 600;
+    line-height: 1.3;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .modal-close {
@@ -1327,6 +1339,7 @@ body {
     cursor: pointer;
     color: var(--text-secondary);
     padding: 0.2rem 0.5rem;
+    flex-shrink: 0;
     transition: var(--transition);
 }
 
@@ -2607,6 +2620,42 @@ body {
     font-weight: 700;
     font-size: 0.85rem;
     flex-shrink: 0;
+    position: relative;
+    overflow: visible;
+}
+
+.chat-contact-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* Aro de exclusividad en miniatura (mismo criterio que el aro grande
+   del perfil, según el emoji de la ruleta que le tocó a ese contacto),
+   pero sin la animación de "abrir perfil": aquí solo se ve el color
+   fijo del aro, quieto, para no sobrecargar una lista con varios
+   contactos animando a la vez. */
+.chat-contact-avatar.avatar-tier-2::before,
+.chat-contact-avatar.avatar-tier-3::before,
+.chat-contact-avatar.avatar-tier-4::before,
+.chat-contact-avatar.avatar-tier-5::before {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.chat-contact-avatar.avatar-tier-2::before { border: 2px solid #7dd3fc; opacity: 0.85; }
+.chat-contact-avatar.avatar-tier-3::before { border: 2px solid #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.55); }
+.chat-contact-avatar.avatar-tier-4::before { border: 2px solid #fbbf24; box-shadow: 0 0 8px rgba(251, 191, 36, 0.65); }
+.chat-contact-avatar.avatar-tier-5::before {
+    border: 2px solid transparent;
+    background: linear-gradient(#fff, #fff) padding-box,
+                linear-gradient(135deg, #f43f5e, #fbbf24, #22d3ee, #a78bfa) border-box;
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
 }
 
 .chat-contact-emoji {
@@ -3652,11 +3701,13 @@ html[data-tema="oscuro"] .messages-contacts {
 }
 
 .profile-owner-id-row {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.6rem;
     font-size: 0.8rem;
     color: var(--text-secondary);
-    margin-top: 0.4rem;
+    margin-top: 1rem;
 }
 
 .profile-owner-id-value {
@@ -3665,21 +3716,18 @@ html[data-tema="oscuro"] .messages-contacts {
     letter-spacing: 0.5px;
 }
 
-/* Overlay: se posiciona por fuera del flujo normal (position:absolute)
-   para que aparecer/desaparecer NUNCA mueva nada a su alrededor, ni en
-   vertical ni en horizontal. Solo "se ve" flotando sobre el perfil. */
+/* Fila normal dentro de la columna de identidad del perfil (mismo
+   lugar donde antes vivía el ID único), en vez de quedar flotando
+   como overlay debajo del avatar: así queda junto al disco/avatar sin
+   necesitar posicionarse por fuera del flujo. */
 .profile-spotify-now {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 0.3rem;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: #1db954;
-    position: absolute;
-    top: -2.4rem;
-    right: 0.5rem;
-    z-index: 6;
-    pointer-events: none;
+    margin-top: 0.4rem;
     animation: spotifyOverlayIn 0.35s ease;
 }
 
@@ -3687,10 +3735,22 @@ html[data-tema="oscuro"] .messages-contacts {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    max-width: 100%;
+}
+
+/* Si el título de la canción es muy largo, se recorta con "..." en
+   vez de desbordar la columna del perfil. */
+.profile-spotify-now-text {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
 }
 
 @keyframes spotifyOverlayIn {
-    from { opacity: 0; transform: translateY(4px); }
+    from { opacity: 0; transform: translateY(-4px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
@@ -3795,11 +3855,13 @@ html[data-tema="oscuro"] .messages-contacts {
 }
 
 /* Disco de vinilo: solo se muestra (clase .is-playing) mientras suena
-   música. Va por encima del perfil, alrededor del avatar, sin ocupar
-   espacio propio ni mover nada del layout (position:absolute). */
+   música. Va por encima del perfil, del mismo tamaño que la foto de
+   perfil (mismo inset que el aro de exclusividad), para que el aro de
+   rareza se vea igual de bien esté sonando música o no. Sigue sin
+   ocupar espacio propio ni mover nada del layout (position:absolute). */
 .spotify-vinyl {
     position: absolute;
-    inset: -14px;
+    inset: 0;
     z-index: 1;
     display: flex;
     align-items: center;
@@ -3903,12 +3965,21 @@ html[data-tema="oscuro"] .messages-contacts {
     border: 2px solid #fff;
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-    transition: transform 0.2s ease;
+    transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease, top 0.2s ease, left 0.2s ease;
 }
 
 .status-emoji-lg:hover {
     transform: scale(1.12);
 }
+
+/* Entre más exclusivo (más raro) el emoji que le tocó en la ruleta, más
+   grande se ve la insignia — pero a la vez se va corriendo más hacia
+   afuera de la esquina, así que siempre crece "hacia afuera" y nunca
+   llega a montarse sobre la foto de perfil. */
+.status-emoji-lg.emoji-tier-2 { width: 34px; height: 34px; font-size: 1.05rem; top: -6px; left: -6px; }
+.status-emoji-lg.emoji-tier-3 { width: 38px; height: 38px; font-size: 1.15rem; top: -8px; left: -8px; box-shadow: 0 2px 10px rgba(167, 139, 250, 0.5); }
+.status-emoji-lg.emoji-tier-4 { width: 42px; height: 42px; font-size: 1.25rem; top: -10px; left: -10px; box-shadow: 0 2px 12px rgba(251, 191, 36, 0.55); }
+.status-emoji-lg.emoji-tier-5 { width: 46px; height: 46px; font-size: 1.35rem; top: -12px; left: -12px; box-shadow: 0 2px 14px rgba(244, 63, 94, 0.55); }
 
 /* Anillos de rareza alrededor del avatar según el emoji obtenido en la
    ruleta: entre más raro el resultado, más "exclusivo" se ve el aro. */
@@ -4426,6 +4497,11 @@ html[data-tema="oscuro"] .messages-contacts {
     .profile-banner { height: 96px; margin-bottom: 0; }
     .profile-avatar-xl { width: 84px; height: 84px; margin-top: -42px; }
     .status-emoji-lg { width: 24px; height: 24px; font-size: 0.85rem; }
+    .status-emoji-lg.emoji-tier-2 { width: 27px; height: 27px; font-size: 0.88rem; top: -5px; left: -5px; }
+    .status-emoji-lg.emoji-tier-3 { width: 30px; height: 30px; font-size: 0.92rem; top: -6px; left: -6px; }
+    .status-emoji-lg.emoji-tier-4 { width: 33px; height: 33px; font-size: 0.98rem; top: -7px; left: -7px; }
+    .status-emoji-lg.emoji-tier-5 { width: 36px; height: 36px; font-size: 1.05rem; top: -8px; left: -8px; }
+    .spotify-vinyl { inset: 0; }
     .profile-top { padding: 0 1rem; gap: 0.8rem; }
     .profile-identity h2 { font-size: 1.15rem; }
     .profile-bio-line { max-width: 100%; font-size: 0.82rem; }
