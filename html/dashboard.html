@@ -152,29 +152,32 @@
                     <div class="profile-identity">
                         <h2 id="profileName">Usuario</h2>
                         <p class="profile-username" id="profileUsername">@usuario</p>
-                        <button class="profile-exclusividad-link" id="exclusividadInfoBtn" type="button">
-                            <i class="fas fa-star"></i> ¿Qué tan exclusivo es este emoji?
-                        </button>
-                        <span class="profile-clase-actual-badge" id="profileClaseActualBadge" style="display:none;">
-                            <span class="clase-actual-dot"></span> <span id="profileClaseActualTexto"></span>
-                        </span>
-                        <div class="profile-meta-row" id="profileMetaRow" style="display:none;">
-                            <span class="profile-meta-chip" id="profileColegioChip" style="display:none;"><i class="fas fa-school"></i> <span id="profileColegioTexto">--</span></span>
-                            <span class="profile-meta-chip" id="profileGradoChip" style="display:none;"><i class="fas fa-graduation-cap"></i> <span id="profileGradoTexto">--</span></span>
+                        <div class="profile-meta-line">
+                            <div class="profile-badges-row" id="profileBadgesRow"></div>
+                            <button class="profile-exclusividad-link" id="exclusividadInfoBtn" type="button">
+                                <i class="fas fa-star"></i> ¿Qué tan exclusivo es este emoji?
+                            </button>
+                            <span class="profile-clase-actual-badge" id="profileClaseActualBadge" style="display:none;">
+                                <span class="clase-actual-dot"></span> <span id="profileClaseActualTexto"></span>
+                            </span>
+                            <div class="profile-meta-row" id="profileMetaRow" style="display:none;">
+                                <span class="profile-meta-chip" id="profileColegioChip" style="display:none;"><i class="fas fa-school"></i> <span id="profileColegioTexto">--</span></span>
+                                <span class="profile-meta-chip" id="profileGradoChip" style="display:none;"><i class="fas fa-graduation-cap"></i> <span id="profileGradoTexto">--</span></span>
+                            </div>
+                            <div class="profile-spotify-now" id="profileSpotifyNow" style="display:none;">
+                                <div class="spotify-now-row">
+                                    <span class="spotify-eq" aria-hidden="true"><span></span><span></span><span></span></span>
+                                    <i class="fab fa-spotify"></i>
+                                    <span id="profileSpotifyNowText" class="profile-spotify-now-text">--</span>
+                                </div>
+                                <div class="spotify-progress-wrap" id="spotifyProgressWrap" style="display:none;">
+                                    <span class="spotify-progress-time" id="spotifyProgressCurrent">0:00</span>
+                                    <div class="spotify-progress-bar"><div class="spotify-progress-fill" id="spotifyProgressFill"></div></div>
+                                    <span class="spotify-progress-time" id="spotifyProgressTotal">0:00</span>
+                                </div>
+                            </div>
                         </div>
                         <p class="profile-bio-line" id="profileBio">Aún no has agregado una descripción.</p>
-                        <div class="profile-spotify-now" id="profileSpotifyNow" style="display:none;">
-                            <div class="spotify-now-row">
-                                <span class="spotify-eq" aria-hidden="true"><span></span><span></span><span></span></span>
-                                <i class="fab fa-spotify"></i>
-                                <span id="profileSpotifyNowText" class="profile-spotify-now-text">--</span>
-                            </div>
-                            <div class="spotify-progress-wrap" id="spotifyProgressWrap" style="display:none;">
-                                <span class="spotify-progress-time" id="spotifyProgressCurrent">0:00</span>
-                                <div class="spotify-progress-bar"><div class="spotify-progress-fill" id="spotifyProgressFill"></div></div>
-                                <span class="spotify-progress-time" id="spotifyProgressTotal">0:00</span>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="profile-actions" id="profileActions">
@@ -351,15 +354,14 @@
                     </div>
 
                     <div class="panel-card">
-                        <div class="panel-card-header"><h3><i class="fas fa-school"></i> Configurar mi colegio y grado</h3></div>
+                        <div class="panel-card-header"><h3><i class="fas fa-school"></i> Mi colegio y grado</h3></div>
                         <div class="panel-card-body">
-                            <p class="school-grade-hint">Escribe el nombre exacto de tu colegio y tu grado. El grado <strong>solo se puede guardar una vez</strong>, revísalo bien antes de confirmar.</p>
+                            <p class="school-grade-hint">Tu colegio lo asigna un profesor o el equipo de soporte; como estudiante no lo puedes cambiar. Tu grado sí lo escribes tú, pero <strong>solo se puede guardar una vez</strong>, revísalo bien antes de confirmar.</p>
                             <div class="school-grade-form">
                                 <div class="form-group">
-                                    <label for="inputColegio"><i class="fas fa-school"></i> Colegio</label>
-                                    <input type="text" id="inputColegio" list="colegiosSugeridos" placeholder="Ej. Colegio San José" autocomplete="off" />
-                                    <datalist id="colegiosSugeridos"></datalist>
-                                    <div class="config-note">Empieza a escribir y verás sugerencias si ya existe; si no, se crea con tu nombre tal cual lo escribas.</div>
+                                    <label for="inputColegio"><i class="fas fa-lock"></i> Colegio</label>
+                                    <input type="text" id="inputColegio" placeholder="Sin asignar aún" autocomplete="off" disabled readonly />
+                                    <div class="config-note">Bloqueado para estudiantes. Si necesitas que te lo asignen o corregirlo, contacta a soporte o a tu profesor.</div>
                                 </div>
                                 <div class="form-group">
                                     <label for="inputGrado"><i class="fas fa-graduation-cap"></i> Grado</label>
@@ -367,7 +369,7 @@
                                     <datalist id="gradosSugeridos"></datalist>
                                     <div id="gradoNote" class="config-note"></div>
                                 </div>
-                                <button class="btn btn-secondary" id="guardarGradoBtn"><i class="fas fa-floppy-disk"></i> Guardar colegio y grado</button>
+                                <button class="btn btn-secondary" id="guardarGradoBtn"><i class="fas fa-floppy-disk"></i> Guardar grado</button>
                             </div>
                         </div>
                     </div>

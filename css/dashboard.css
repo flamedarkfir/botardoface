@@ -643,8 +643,12 @@ body {
 
 .panel-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 1.2rem;
+}
+
+.panel-card.full-width {
+    grid-column: 1 / -1;
 }
 
 .panel-card {
@@ -976,7 +980,7 @@ body {
 
 .posts-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 0.8rem;
 }
 
@@ -2636,10 +2640,10 @@ body {
    pero sin la animación de "abrir perfil": aquí solo se ve el color
    fijo del aro, quieto, para no sobrecargar una lista con varios
    contactos animando a la vez. */
-.chat-contact-avatar.avatar-tier-2::before,
-.chat-contact-avatar.avatar-tier-3::before,
-.chat-contact-avatar.avatar-tier-4::before,
-.chat-contact-avatar.avatar-tier-5::before {
+.chat-contact-avatar.avatar-tier-2::before, .chat-toast-avatar.avatar-tier-2::before,
+.chat-contact-avatar.avatar-tier-3::before, .chat-toast-avatar.avatar-tier-3::before,
+.chat-contact-avatar.avatar-tier-4::before, .chat-toast-avatar.avatar-tier-4::before,
+.chat-contact-avatar.avatar-tier-5::before, .chat-toast-avatar.avatar-tier-5::before {
     content: '';
     position: absolute;
     inset: -3px;
@@ -2648,10 +2652,10 @@ body {
     z-index: 0;
 }
 
-.chat-contact-avatar.avatar-tier-2::before { border: 2px solid #7dd3fc; opacity: 0.85; }
-.chat-contact-avatar.avatar-tier-3::before { border: 2px solid #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.55); }
-.chat-contact-avatar.avatar-tier-4::before { border: 2px solid #fbbf24; box-shadow: 0 0 8px rgba(251, 191, 36, 0.65); }
-.chat-contact-avatar.avatar-tier-5::before {
+.chat-contact-avatar.avatar-tier-2::before, .chat-toast-avatar.avatar-tier-2::before { border: 2px solid #7dd3fc; opacity: 0.85; }
+.chat-contact-avatar.avatar-tier-3::before, .chat-toast-avatar.avatar-tier-3::before { border: 2px solid #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.55); }
+.chat-contact-avatar.avatar-tier-4::before, .chat-toast-avatar.avatar-tier-4::before { border: 2px solid #fbbf24; box-shadow: 0 0 8px rgba(251, 191, 36, 0.65); }
+.chat-contact-avatar.avatar-tier-5::before, .chat-toast-avatar.avatar-tier-5::before {
     border: 2px solid transparent;
     background: linear-gradient(#fff, #fff) padding-box,
                 linear-gradient(135deg, #f43f5e, #fbbf24, #22d3ee, #a78bfa) border-box;
@@ -3681,6 +3685,28 @@ html[data-tema="oscuro"] .messages-contacts {
     display: flex;
 }
 
+/* Agrupa en UNA sola fila (que se ajusta si no cabe) todo lo que se
+   fue añadiendo con el tiempo -badges, el link de exclusividad, la
+   clase actual, colegio/grado y el estado de Spotify- para que el
+   perfil vuelva a ser básicamente "nombre, usuario y descripción" en
+   altura, en vez de una columna que crece sin parar hacia abajo cada
+   vez que se agrega una función nueva. */
+.profile-meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.7rem;
+    margin: 0.4rem 0 0.3rem;
+}
+
+.profile-meta-line .profile-badges-row,
+.profile-meta-line .profile-meta-row,
+.profile-meta-line .profile-spotify-now {
+    margin: 0;
+}
+
+.profile-meta-line:empty { display: none; }
+
 .profile-meta-row {
     display: flex;
     flex-wrap: wrap;
@@ -3778,7 +3804,7 @@ html[data-tema="oscuro"] .messages-contacts {
 
 .profile-top {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 1.2rem;
     padding: 0.5rem 1.5rem 0;
     flex-wrap: wrap;
@@ -4980,4 +5006,103 @@ html[data-tema="oscuro"] .app-loader-spinner {
 .spotify-popup-message i {
     font-size: 2.2rem;
     color: #1db954;
+}
+
+/* =========================================================
+   INSIGNIAS DE PERFIL (Admin/Developer, Profesor, BETA)
+   ========================================================= */
+.profile-badges-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.35rem 0 0.15rem;
+}
+
+.profile-badges-row:empty { margin: 0; }
+
+.profile-badge-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.28rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    white-space: nowrap;
+}
+
+.profile-badge-chip i { font-size: 0.78rem; }
+
+/* Admin/Developer: degradado oscuro con un brillo dorado, para que se
+   note de inmediato que es una cuenta "especial" del equipo. */
+.profile-badge-developer {
+    background: linear-gradient(135deg, #1a2332 0%, #2c3e50 60%, #0d6efd 130%);
+    border: 1px solid rgba(255, 215, 0, 0.55);
+    text-shadow: 0 0 6px rgba(255, 215, 0, 0.35);
+}
+
+.profile-badge-profesor {
+    background: linear-gradient(135deg, #0d6efd 0%, #2563eb 100%);
+}
+
+/* BETA: un degradado morado/rosa vibrante, distinto a los demás, para
+   que salte a la vista que es de las primeras cuentas del sitio. */
+.profile-badge-beta {
+    background: linear-gradient(135deg, #7b2cbf 0%, #d81b60 100%);
+}
+
+/* =========================================================
+   TARJETA "¿QUÉ TAN EXCLUSIVO ES ESTE EMOJI?"
+   Resalta en verde el grupo (tier) en el que está el usuario
+   ahora mismo, para que sea evidente "estamos aquí".
+   ========================================================= */
+.tier-info-row-current {
+    background: rgba(46, 125, 50, 0.12);
+    border: 1px solid rgba(46, 125, 50, 0.4);
+    border-radius: 12px;
+}
+
+.tier-info-current-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    background: #2e7d32;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+/* =========================================================
+   AVATAR REAL (FOTO + ARO) EN NOTIFICACIONES Y TOASTS
+   Antes estos lugares solo mostraban un ícono genérico o una
+   letra suelta; ahora reutilizan el mismo círculo con foto +
+   aro de exclusividad que ya usan los contactos de chat, solo
+   que a un tamaño más chico para que quepan bien en la lista.
+   ========================================================= */
+.notif-item .chat-contact-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.chat-toast-avatar {
+    position: relative;
+    overflow: visible;
+}
+
+.chat-toast-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
 }

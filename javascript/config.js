@@ -1,4 +1,6 @@
-import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, arrayUnion, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
+import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, arrayUnion, runTransaction, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
+import { EMOJI_SIN_REACCION, EMOJIS_RULETA, indiceRarezaEmoji, tierVisualEmoji, girarRuletaEmoji, datosExclusividadPorTier, TIER_INFO } from './avatar-utils.js';
+import { obtenerBadgesDeUsuario, construirBadgesHtml } from './badges.js';
 
 (function() {
     'use strict';
@@ -9,42 +11,10 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     let posts = [];
     let bioText = 'Aún no has agregado una descripción.';
-    // '😶' = "sin reacción": el emoji por defecto hasta que la persona
-    // gire la ruleta al menos una vez. No es un premio posible de la
-    // ruleta, así que siempre se nota que todavía no ha girado.
-    let statusEmoji = '😶';
-    const EMOJI_SIN_REACCION = '😶';
-
-    // Ruleta de emoji: entre más abajo en la lista, más raro (y más
-    // "exclusiva" hace ver la cuenta). El primero tiene ~70% de
-    // probabilidad; el resto va bajando cada vez más fuerte.
-    const EMOJIS_RULETA = [
-        { emoji: '😊', peso: 70 },
-        { emoji: '😂', peso: 11 },
-        { emoji: '😒', peso: 6 },
-        { emoji: '😎', peso: 3.8 },
-        { emoji: '😜', peso: 2.5 },
-        { emoji: '🚗', peso: 1.7 },
-        { emoji: '🚓', peso: 1.15 },
-        { emoji: '✈️', peso: 0.8 },
-        { emoji: '🪂', peso: 0.55 },
-        { emoji: '🛩️', peso: 0.38 },
-        { emoji: '🚀', peso: 0.27 },
-        { emoji: '🛸', peso: 0.19 },
-        { emoji: '🌅', peso: 0.14 },
-        { emoji: '🌄', peso: 0.1 },
-        { emoji: '🌆', peso: 0.075 },
-        { emoji: '🌤️', peso: 0.056 },
-        { emoji: '🌦️', peso: 0.042 },
-        { emoji: '🌥️', peso: 0.032 },
-        { emoji: '❄️', peso: 0.024 },
-        { emoji: '🔥', peso: 0.018 },
-        { emoji: '⛱️', peso: 0.013 },
-        { emoji: '🌊', peso: 0.01 },
-        { emoji: '🎈', peso: 0.008 },
-        { emoji: '🧨', peso: 0.006 },
-        { emoji: '✨', peso: 0.005 }
-    ];
+    // El emoji por defecto hasta que la persona gire la ruleta al menos
+    // una vez (EMOJI_SIN_REACCION, EMOJIS_RULETA y toda la lógica de
+    // tiers de rareza ahora viven en avatar-utils.js).
+    let statusEmoji = EMOJI_SIN_REACCION;
 
     const MAX_GIROS_EMOJI_POR_DIA = 3;
     let emojiGiroUsage = { fecha: '', cantidad: 0 };
@@ -226,14 +196,6 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         return html;
     }
 
-    function formatearTiempoRelativo(timestamp) {
-        const diff = Math.floor((Date.now() - timestamp) / 1000);
-        if (diff < 60) return 'Hace unos segundos';
-        if (diff < 3600) return `Hace ${Math.floor(diff / 60)} min`;
-        if (diff < 86400) return `Hace ${Math.floor(diff / 3600)} h`;
-        return `Hace ${Math.floor(diff / 86400)} d`;
-    }
-
     function renderActivityTimeline() {
         const container = document.getElementById('activityTimeline');
         if (!container) return;
@@ -353,6 +315,45 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
     }
 
+    // Pinta las insignias (Admin/Developer, Profesor, BETA) en el
+    // contenedor indicado por su id. Se usa tanto para el perfil propio
+    // como para el de cualquier otro usuario que se visite; basta con
+    // pasarle su email y su signupNumber (ver asignarSignupNumberSiFalta
+    // más abajo para de dónde sale ese número).
+    function renderBadgesEnPerfil(contenedorId, { email, signupNumber } = {}) {
+        const el = document.getElementById(contenedorId);
+        if (!el) return;
+        el.innerHTML = construirBadgesHtml(obtenerBadgesDeUsuario({ email: email, signupNumber: signupNumber }));
+    }
+
+    // Le asigna a una cuenta su "número de registro" (1, 2, 3...) LA
+    // PRIMERA VEZ que se detecta que no tiene uno, usando una
+    // transacción sobre un contador compartido para que dos cuentas
+    // nunca puedan quedar con el mismo número aunque se registren al
+    // mismo tiempo. Ese número es lo único que decide si a la cuenta le
+    // toca (o no) la insignia BETA (ver BETA_SIGNUP_LIMIT en badges.js).
+    async function asignarSignupNumberSiFalta(uid) {
+        try {
+            const contadorRef = doc(db, 'meta', 'contadores');
+            const numero = await runTransaction(db, async function(tx) {
+                const snap = await tx.get(contadorRef);
+                const actual = (snap.exists() && snap.data().totalUsuariosRegistrados) || 0;
+                const siguiente = actual + 1;
+                tx.set(contadorRef, { totalUsuariosRegistrados: siguiente }, { merge: true });
+                return siguiente;
+            });
+            await setDoc(doc(db, 'users', uid), { signupNumber: numero }, { merge: true });
+            return numero;
+        } catch (err) {
+            // Si esto falla (por ejemplo, por reglas de seguridad de
+            // Firestore que aún no permiten escribir en "meta"), no
+            // rompe el resto del login: la cuenta simplemente se queda
+            // sin insignia BETA hasta que se pueda asignar más tarde.
+            console.error('Error asignando número de registro:', err);
+            return null;
+        }
+    }
+
     function loadUserData() {
         const data = currentUserData || { name: 'Usuario', username: 'usuario', email: '' };
 
@@ -373,6 +374,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         const userRoleEl = document.querySelector('.user-role');
         if (userRoleEl) userRoleEl.textContent = 'Alumno';
+
+        renderBadgesEnPerfil('profileBadgesRow', { email: data.email, signupNumber: data.signupNumber });
 
         const metaRow = document.getElementById('profileMetaRow');
         const colegioChip = document.getElementById('profileColegioChip');
@@ -456,19 +459,9 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
     }
 
-    // El colegio y el grado ahora son campos de texto libre (el
-    // estudiante los escribe directamente, no elige de una lista). Los
-    // <datalist> solo sirven como sugerencia opcional para evitar
-    // duplicados por error de tipeo; el estudiante puede escribir lo que
-    // quiera y, si el colegio no existe todavía, se crea automáticamente.
-    function renderColegiosDatalist() {
-        const dl = document.getElementById('colegiosSugeridos');
-        if (!dl) return;
-        dl.innerHTML = colegiosCache.map(function(c) {
-            return `<option value="${escapeHtml(c.nombre)}"></option>`;
-        }).join('');
-    }
-
+    // El <datalist> de grado sigue sirviendo como sugerencia opcional
+    // cuando el colegio ya viene asignado, para evitar duplicados por
+    // error de tipeo (p. ej. "11-A" vs "11 A").
     function renderGradosDatalistParaColegio(nombreColegio) {
         const dl = document.getElementById('gradosSugeridos');
         if (!dl) return;
@@ -482,26 +475,26 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     function actualizarNotaGrado() {
         const note = document.getElementById('gradoNote');
         const guardarBtn = document.getElementById('guardarGradoBtn');
-        const inputColegioEl = document.getElementById('inputColegio');
         const inputGradoEl = document.getElementById('inputGrado');
         const yaSeCambio = !!(currentUserData && currentUserData.gradoChanged);
         if (note) {
             note.innerHTML = yaSeCambio
                 ? `Ya elegiste tu grado y no se puede volver a cambiar. Si te equivocaste, escribe a <a href="mailto:${SOPORTE_EMAIL}">soporte</a>.`
-                : 'Podrás escribir tu colegio y tu grado una sola vez. Revísalo bien antes de guardar.';
+                : 'Tu colegio lo asigna un profesor o el equipo de soporte (el estudiante no puede cambiarlo). Tu grado sí lo puedes escribir tú, pero solo una vez: revísalo bien antes de guardar.';
         }
         if (guardarBtn) guardarBtn.disabled = yaSeCambio;
-        if (inputColegioEl) inputColegioEl.disabled = yaSeCambio;
         if (inputGradoEl) inputGradoEl.disabled = yaSeCambio;
     }
 
-    async function guardarColegioGradoUsuario(colegioNombre, gradoNombre) {
+    // Guarda SOLO el grado. El colegio ya no lo puede tocar el
+    // estudiante desde aquí: queda en lo que tenga guardado
+    // actualmente (vacío hasta que un profesor/admin lo asigne, o lo
+    // que ya tuviera antes de este cambio).
+    async function guardarGradoUsuario(gradoNombre) {
         await setDoc(doc(db, 'users', currentUser.uid), {
-            colegio: colegioNombre,
             grado: gradoNombre,
             gradoChanged: true
         }, { merge: true });
-        currentUserData.colegio = colegioNombre;
         currentUserData.grado = gradoNombre;
         currentUserData.gradoChanged = true;
         loadUserData();
@@ -511,18 +504,23 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     async function initGradoColegio() {
         await cargarColegios();
-        renderColegiosDatalist();
 
         const inputColegioEl = document.getElementById('inputColegio');
         const inputGradoEl = document.getElementById('inputGrado');
         const guardarBtn = document.getElementById('guardarGradoBtn');
 
+        // El colegio queda siempre bloqueado para el estudiante: solo se
+        // muestra el que ya tenga asignado (o vacío si aún no le han
+        // asignado ninguno). Solo un profesor/admin o soporte pueden
+        // cambiarlo (por ahora, directamente desde el panel de Firebase;
+        // la sección especial de profesores para hacerlo desde la app
+        // llegará más adelante).
         if (inputColegioEl) {
             inputColegioEl.value = (currentUserData && currentUserData.colegio) || '';
+            inputColegioEl.placeholder = 'Sin asignar aún';
+            inputColegioEl.disabled = true;
+            inputColegioEl.title = 'Solo un profesor o soporte pueden asignar tu colegio.';
             renderGradosDatalistParaColegio(inputColegioEl.value);
-            inputColegioEl.addEventListener('input', function() {
-                renderGradosDatalistParaColegio(inputColegioEl.value);
-            });
         }
         if (inputGradoEl) {
             inputGradoEl.value = (currentUserData && currentUserData.grado) || '';
@@ -534,36 +532,29 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     alert(`Ya elegiste tu grado. Escribe a ${SOPORTE_EMAIL} para cambiarlo.`);
                     return;
                 }
-                const colegioTexto = inputColegioEl ? inputColegioEl.value.trim() : '';
                 const gradoTexto = inputGradoEl ? inputGradoEl.value.trim() : '';
-                if (!colegioTexto || !gradoTexto) {
-                    alert('Escribe tu colegio y tu grado antes de guardar.');
+                if (!gradoTexto) {
+                    alert('Escribe tu grado antes de guardar.');
                     return;
                 }
-                if (!confirm(`¿Seguro que quieres guardar "${gradoTexto}" en "${colegioTexto}" como tu grado? Solo podrás hacerlo una vez; para cambios futuros tendrás que contactar a soporte.`)) return;
+                if (!confirm(`¿Seguro que quieres guardar "${gradoTexto}" como tu grado? Solo podrás hacerlo una vez; para cambios futuros tendrás que contactar a soporte.`)) return;
 
                 guardarBtn.disabled = true;
                 try {
-                    const normColegio = normalizarTextoComparacion(colegioTexto);
-                    const colegioExistente = colegiosCache.find(function(c) { return normalizarTextoComparacion(c.nombre) === normColegio; });
+                    const colegioActual = (currentUserData && currentUserData.colegio) || '';
+                    const normColegio = normalizarTextoComparacion(colegioActual);
+                    const colegioExistente = normColegio ? colegiosCache.find(function(c) { return normalizarTextoComparacion(c.nombre) === normColegio; }) : null;
 
                     if (colegioExistente) {
                         const normGrado = normalizarTextoComparacion(gradoTexto);
                         const gradoExistente = colegioExistente.grados.find(function(g) { return normalizarTextoComparacion(g) === normGrado; });
-                        const gradoFinal = gradoExistente || gradoTexto;
                         if (!gradoExistente) {
                             await setDoc(doc(db, 'colegios', colegioExistente.id), { grados: arrayUnion(gradoTexto) }, { merge: true });
                             colegioExistente.grados.push(gradoTexto);
                         }
-                        await guardarColegioGradoUsuario(colegioExistente.nombre, gradoFinal);
-                    } else {
-                        const id = slugColegio(colegioTexto);
-                        await setDoc(doc(db, 'colegios', id), { nombre: colegioTexto, grados: [gradoTexto] });
-                        colegiosCache.push({ id: id, nombre: colegioTexto, grados: [gradoTexto] });
-                        colegiosCache.sort(function(a, b) { return a.nombre.localeCompare(b.nombre); });
-                        await guardarColegioGradoUsuario(colegioTexto, gradoTexto);
                     }
-                    alert('Tu colegio y tu grado se guardaron correctamente.');
+                    await guardarGradoUsuario(gradoTexto);
+                    alert('Tu grado se guardó correctamente.');
                 } catch (err) {
                     console.error('Error guardando grado:', err);
                     alert('No se pudo guardar: ' + (err.code || err.message));
@@ -1346,25 +1337,6 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         aplicarAnimEntradaPerfilPorEmoji(statusEmoji);
     }
 
-    // Índice de rareza dentro de la ruleta (0 = el más común). El emoji
-    // por defecto ("sin reacción") no cuenta como premio, así que no
-    // tiene tier especial.
-    function indiceRarezaEmoji(emoji) {
-        return EMOJIS_RULETA.findIndex(function(e) { return e.emoji === emoji; });
-    }
-
-    // Traduce la posición en la ruleta a uno de 5 "tiers" visuales: entre
-    // más raro salió el emoji, más llamativo el aro alrededor del avatar.
-    function tierVisualEmoji(emoji) {
-        const idx = indiceRarezaEmoji(emoji);
-        if (idx < 0) return 0;
-        if (idx <= 1) return 1;
-        if (idx <= 4) return 2;
-        if (idx <= 9) return 3;
-        if (idx <= 16) return 4;
-        return 5;
-    }
-
     // Se llama cada vez que se entra a un perfil (el propio o el de
     // alguien más) para que la anim del aro de rareza se vuelva a
     // reproducir, no solo la primera vez que se gira el emoji.
@@ -1423,18 +1395,6 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         setTimeout(function() {
             if (capa.parentNode) capa.remove();
         }, 3200);
-    }
-
-    // Elige un emoji al azar respetando los pesos (el primero de la
-    // lista tiene ~70% de probabilidad, y va bajando fuerte desde ahí).
-    function girarRuletaEmoji() {
-        const pesoTotal = EMOJIS_RULETA.reduce(function(acc, e) { return acc + e.peso; }, 0);
-        let punto = Math.random() * pesoTotal;
-        for (let i = 0; i < EMOJIS_RULETA.length; i++) {
-            punto -= EMOJIS_RULETA[i].peso;
-            if (punto <= 0) return EMOJIS_RULETA[i].emoji;
-        }
-        return EMOJIS_RULETA[0].emoji;
     }
 
     function girosEmojiDisponiblesHoy() {
@@ -1559,45 +1519,28 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     // --- Tarjeta de exclusividad: explica qué es el aro/insignia del
     // emoji y qué tan raro (o común) es cada resultado posible de la
     // ruleta, agrupado en los mismos 5 tiers que usan el aro y la
-    // insignia visualmente. Los porcentajes se calculan una sola vez
-    // a partir de los pesos reales de EMOJIS_RULETA, así que si el
-    // peso de algún emoji cambia, la tarjeta se actualiza sola.
-    const TIER_INFO = [
-        { tier: 1, nombre: 'Común', color: '#94a3b8' },
-        { tier: 2, nombre: 'Poco común', color: '#7dd3fc' },
-        { tier: 3, nombre: 'Raro', color: '#a78bfa' },
-        { tier: 4, nombre: 'Épico', color: '#fbbf24' },
-        { tier: 5, nombre: 'Legendario', color: '#f43f5e' }
-    ];
-
-    function datosExclusividadPorTier() {
-        const pesoTotal = EMOJIS_RULETA.reduce(function(acc, e) { return acc + e.peso; }, 0);
-        const grupos = TIER_INFO.map(function(info) {
-            return Object.assign({ emojis: [], porcentaje: 0 }, info);
-        });
-        EMOJIS_RULETA.forEach(function(e) {
-            const tier = tierVisualEmoji(e.emoji);
-            const grupo = grupos[tier - 1];
-            if (!grupo) return;
-            grupo.emojis.push(e.emoji);
-            grupo.porcentaje += (e.peso / pesoTotal) * 100;
-        });
-        return grupos;
-    }
-
+    // insignia visualmente. Los porcentajes vienen de avatar-utils.js
+    // (datosExclusividadPorTier), calculados a partir de los pesos
+    // reales de EMOJIS_RULETA, así que si el peso de algún emoji
+    // cambia, la tarjeta se actualiza sola. Además se marca en verde el
+    // grupo en el que está el emoji ACTUAL del usuario, para que quede
+    // clarísimo "estamos aquí".
     function buildExclusividadModal() {
         if (document.getElementById('exclusividadOverlay')) return;
         const grupos = datosExclusividadPorTier();
+        const miTier = tierVisualEmoji(statusEmoji);
         const filas = grupos.map(function(g) {
             const pct = g.porcentaje >= 1 ? g.porcentaje.toFixed(1) : g.porcentaje.toFixed(2);
+            const esElMio = g.tier === miTier;
             return `
-                <div class="tier-info-row">
+                <div class="tier-info-row${esElMio ? ' tier-info-row-current' : ''}">
                     <span class="tier-info-swatch" style="background:${g.color};"></span>
                     <div class="tier-info-text">
                         <strong>${g.nombre}</strong>
                         <span class="tier-info-pct">~${pct}% de probabilidad</span>
                     </div>
                     <div class="tier-info-emojis">${g.emojis.join(' ')}</div>
+                    ${esElMio ? '<span class="tier-info-current-badge"><i class="fas fa-check"></i> Estás aquí</span>' : ''}
                 </div>
             `;
         }).join('');
@@ -1615,7 +1558,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                             son igual de comunes. Entre más raro sea el que te salió, más llamativo se
                             ve el aro alrededor de tu foto de perfil (y a partir de "Épico" hasta caen
                             emojis de fondo cuando alguien abre tu perfil). Así se sabe, sin decir nada,
-                            qué tan exclusiva es tu cuenta.
+                            qué tan exclusiva es tu cuenta. El grupo marcado en verde es el tuyo ahora
+                            mismo.
                         </p>
                         <div class="tier-info-list">${filas}</div>
                     </div>
@@ -1934,9 +1878,16 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         agregarActividad('#0d47a1', titulo, mensaje);
     }
 
-    function agregarNotificacionLive(titulo, mensaje, target, avatar) {
+    // `fromUid` (opcional) es el uid de LA PERSONA relacionada con la
+    // notificación (por ejemplo, quien te empezó a seguir). Con eso
+    // alcanza para poder mostrar su foto de perfil real y su aro de
+    // exclusividad en la notificación/toast, en vez de una letra o un
+    // ícono genérico: se resuelve al momento de renderizar (ver
+    // avatarHtmlParaUid más abajo), así que si esa persona cambia su
+    // foto después, la notificación vieja también se actualiza sola.
+    function agregarNotificacionLive(titulo, mensaje, target, fromUid) {
         if (notifSettings.live && currentUser) {
-            guardarNotificacionPersistente(currentUser.uid, 'live', titulo, mensaje, target, avatar).then(function(id) {
+            guardarNotificacionPersistente(currentUser.uid, 'live', titulo, mensaje, target, fromUid).then(function(id) {
                 if (id) notifIdsRenderizados.add(id);
             });
         }
@@ -1953,7 +1904,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
     let notifIdsRenderizados = new Set();
     const notifSessionStart = Date.now();
 
-    async function guardarNotificacionPersistente(uid, tipo, titulo, mensaje, target, avatar) {
+    async function guardarNotificacionPersistente(uid, tipo, titulo, mensaje, target, fromUid) {
         try {
             const nuevaRef = push(ref(rtdb, 'users/' + uid + '/notificaciones'));
             await set(nuevaRef, {
@@ -1961,7 +1912,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 titulo: titulo,
                 mensaje: mensaje,
                 target: target || null,
-                avatar: avatar || null,
+                fromUid: fromUid || null,
                 ts: Date.now(),
                 leido: false
             });
@@ -2012,15 +1963,41 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
     }
 
+    // Junta en un solo Promise.all los avatares/emojis que hagan falta
+    // para una lista de uids (usa el mismo cache que ya usan los
+    // contactos de chat, así que si ya se cargaron antes no se vuelve a
+    // pedir nada). Se usa antes de pintar notificaciones y toasts para
+    // que la foto de perfil y el aro de exclusividad salgan SIEMPRE,
+    // no solo "a veces".
+    function precargarUsuarios(uids) {
+        const lista = Array.from(new Set((uids || []).filter(Boolean)));
+        const faltan = lista.filter(function(uid) { return !(uid in contactEmojis) || !(uid in contactAvatars); });
+        if (faltan.length === 0) return Promise.resolve();
+        return Promise.all(
+            faltan.map(function(uid) { return Promise.all([obtenerEmojiUsuario(uid), obtenerAvatarUsuario(uid)]); })
+        );
+    }
+
+    // Construye el avatar miniatura (foto real + aro de exclusividad, o
+    // la inicial del nombre si todavía no tiene foto) para un uid dado,
+    // reutilizando exactamente el mismo look que ya usan los contactos
+    // de chat. `nombreFallback` se usa para la inicial y como texto
+    // alternativo si no hay nada mejor.
+    function avatarHtmlParaUid(uid, nombreFallback) {
+        if (!uid) return null;
+        return htmlAvatarContacto(uid, nombreFallback || '?');
+    }
+
     function renderNotifItemGuardado(n) {
         const list = document.querySelector(n.tipo === 'sistema' ? '#notifSistema .notif-list' : '#notifLive .notif-list');
         if (!list) return;
         const icono = n.tipo === 'sistema' ? 'fa-info-circle' : 'fa-bell';
         const color = n.tipo === 'sistema' ? '#0d47a1' : '#e65100';
+        const avatarHtml = n.fromUid ? avatarHtmlParaUid(n.fromUid, n.titulo) : null;
         const item = document.createElement('li');
         item.className = 'notif-item' + (n.leido ? '' : ' unread');
         item.innerHTML = `
-            <i class="fas ${icono}" style="color:${color};"></i>
+            ${avatarHtml || `<i class="fas ${icono}" style="color:${color};"></i>`}
             <div><p><strong>${escapeHtml(n.titulo)}</strong> - ${escapeHtml(n.mensaje)}</p><span>${formatearTiempoRelativo(n.ts)}</span></div>
         `;
         if (n.target) {
@@ -2037,7 +2014,13 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         list.appendChild(item);
     }
 
-    function renderNotificacionesGuardadas(registros) {
+    async function renderNotificacionesGuardadas(registros) {
+        // Antes de pintar nada, nos aseguramos de tener en cache el
+        // avatar+emoji de TODAS las personas involucradas en estas
+        // notificaciones. Así el aro y la foto salen desde el primer
+        // render, sin parpadeos ni notificaciones "a medias".
+        await precargarUsuarios(registros.map(function(n) { return n.fromUid; }));
+
         const listLive = document.querySelector('#notifLive .notif-list');
         const listSistema = document.querySelector('#notifSistema .notif-list');
         if (listLive) listLive.innerHTML = '';
@@ -2083,7 +2066,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                             titulo: n.titulo,
                             mensaje: n.mensaje,
                             target: n.target,
-                            avatarHtml: n.avatar ? escapeHtml(n.avatar) : null
+                            fromUid: n.fromUid
                         });
                     }
                 });
@@ -2105,8 +2088,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
     // Toast genérico (además del de mensajes de chat que ya existía) para
     // avisos en vivo mientras el usuario está usando la app: nuevo seguidor,
-    // clase que empieza, etc. Máximo 3 visibles a la vez.
-    function mostrarToastGenerico(opciones) {
+    // clase que empieza, etc. Máximo 3 visibles a la vez. Si la notificación
+    // trae `fromUid`, se precarga su avatar+emoji antes de pintar el toast
+    // para que salga con la foto real y el aro, no con el ícono genérico.
+    async function mostrarToastGenerico(opciones) {
+        if (opciones.fromUid) await precargarUsuarios([opciones.fromUid]);
+
         let container = document.getElementById('toastContainer');
         if (!container) {
             container = document.createElement('div');
@@ -2119,10 +2106,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
             container.firstElementChild.remove();
         }
 
+        const avatarHtml = opciones.fromUid ? htmlAvatarToast(opciones.fromUid, opciones.titulo) : '<div class="chat-toast-avatar"><i class="fas fa-bell"></i></div>';
+
         const toast = document.createElement('div');
         toast.className = 'chat-toast';
         toast.innerHTML = `
-            <div class="chat-toast-avatar">${opciones.avatarHtml || '<i class="fas fa-bell"></i>'}</div>
+            ${avatarHtml}
             <div class="chat-toast-body">
                 <span class="chat-toast-name">${escapeHtml(opciones.titulo)}</span>
                 <span class="chat-toast-text">${escapeHtml(opciones.mensaje)}</span>
@@ -2617,6 +2606,15 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                 init();
                 if (esCuentaNueva) {
                     agregarNotificacionBienvenida();
+                    // Le asigna su número de registro (para la insignia BETA) sin
+                    // bloquear el resto del flujo; en cuanto llega, se refresca la
+                    // fila de badges del perfil.
+                    asignarSignupNumberSiFalta(user.uid).then(function(numero) {
+                        if (numero != null && currentUserData) {
+                            currentUserData.signupNumber = numero;
+                            renderBadgesEnPerfil('profileBadgesRow', { email: currentUserData.email, signupNumber: numero });
+                        }
+                    });
                     // En cuentas recién creadas, algunas estadísticas dependen
                     // de listeners en tiempo real (seguidores, clases, chats de
                     // IA) que pueden no haber terminado de sincronizar en el
@@ -2649,6 +2647,17 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     marcarPasoCarga('perfil', 'active');
                     actualizarTextoCarga('Preparando tu perfil...');
                     init();
+                    // Cuentas que ya existían antes de que existiera la insignia
+                    // BETA todavía no tienen signupNumber: se lo asignamos aquí,
+                    // la primera vez que inician sesión después de este cambio.
+                    if (!data.signupNumber) {
+                        asignarSignupNumberSiFalta(user.uid).then(function(numero) {
+                            if (numero != null && currentUserData) {
+                                currentUserData.signupNumber = numero;
+                                renderBadgesEnPerfil('profileBadgesRow', { email: currentUserData.email, signupNumber: numero });
+                            }
+                        });
+                    }
                     return;
                 }
                 ocultarAppLoader();
@@ -3005,7 +3014,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
                     'Nuevo seguidor',
                     `${currentUserData.name} (@${currentUserData.username}) ahora te sigue`,
                     'perfil:' + currentUser.uid + ':' + encodeURIComponent(currentUserData.name || '') + ':' + (currentUserData.username || ''),
-                    (currentUserData.name || '?').charAt(0).toUpperCase()
+                    currentUser.uid
                 );
                 followingSet.add(uid);
                 if (!followingList.some(function(u) { return u.uid === uid; })) {
@@ -3129,7 +3138,12 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         return !!(sec && sec.classList.contains('active'));
     }
 
-    function mostrarToastMensaje(u, text) {
+    async function mostrarToastMensaje(u, text) {
+        // Los contactos de chat ya se precargan con precargarEmojis() al
+        // armar la lista, pero por si este contacto llegó por otra vía,
+        // nos aseguramos aquí también antes de pintar el toast.
+        await precargarUsuarios([u.uid]);
+
         let container = document.getElementById('toastContainer');
         if (!container) {
             container = document.createElement('div');
@@ -3143,7 +3157,7 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         const toast = document.createElement('div');
         toast.className = 'chat-toast';
         toast.innerHTML = `
-            <div class="chat-toast-avatar">${escapeHtml(u.name.charAt(0).toUpperCase())}</div>
+            ${htmlAvatarToast(u.uid, u.name)}
             <div class="chat-toast-body">
                 <span class="chat-toast-name">${escapeHtml(u.name)}</span>
                 <span class="chat-toast-text">${escapeHtml(text)}</span>
@@ -3191,23 +3205,38 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         });
     }
 
-    // Arma el círculo de avatar para la lista de chats/encabezado de chat:
-    // foto real si el contacto ya tiene una guardada (si no, la inicial
-    // de su nombre como antes) y el aro de exclusividad correspondiente
-    // a su emoji, en versión miniatura (sin la animación de "abrir
-    // perfil", que se queda solo para la vista de perfil completa).
-    function htmlAvatarContacto(uid, nombre) {
+    // Arma el círculo de avatar con foto real (si el contacto ya tiene
+    // una guardada; si no, la inicial de su nombre) y el aro de
+    // exclusividad correspondiente a su emoji, en miniatura. Recibe la
+    // clase base para poder reutilizar exactamente el mismo cálculo en
+    // los tres lugares donde aparece un avatar chico: lista de chats,
+    // toasts (mensajes y notificaciones) y el dropdown de la campanita.
+    function construirAvatarMiniHtml(uid, nombre, claseBase) {
         const avatar = contactAvatars[uid];
         const emoji = contactEmojis[uid] || '';
         const tier = emoji ? tierVisualEmoji(emoji) : 0;
         const tierClass = tier > 0 ? ' avatar-tier-' + tier : '';
-        const inicial = escapeHtml(nombre.charAt(0).toUpperCase());
+        const inicial = escapeHtml((nombre || '?').charAt(0).toUpperCase());
         if (avatar && avatar.tipo === 'imagen' && avatar.valor) {
             const posX = avatar.posX != null ? avatar.posX : 50;
             const posY = avatar.posY != null ? avatar.posY : 50;
-            return `<div class="chat-contact-avatar${tierClass}"><img src="${PROFILE_BG_PATH}${avatar.valor}.webp" alt="" style="object-position:${posX}% ${posY}%;" /></div>`;
+            return `<div class="${claseBase}${tierClass}"><img src="${PROFILE_BG_PATH}${avatar.valor}.webp" alt="" style="object-position:${posX}% ${posY}%;" /></div>`;
         }
-        return `<div class="chat-contact-avatar${tierClass}">${inicial}</div>`;
+        return `<div class="${claseBase}${tierClass}">${inicial}</div>`;
+    }
+
+    // Círculo de avatar para la lista de chats/encabezado de chat (sin
+    // la animación de "abrir perfil", que se queda solo para la vista
+    // de perfil completa).
+    function htmlAvatarContacto(uid, nombre) {
+        return construirAvatarMiniHtml(uid, nombre, 'chat-contact-avatar');
+    }
+
+    // Mismo avatar miniatura pero para los toasts flotantes (mensaje
+    // nuevo, nuevo seguidor, etc.), que usan un círculo ligeramente
+    // más chico con su propia clase CSS.
+    function htmlAvatarToast(uid, nombre) {
+        return construirAvatarMiniHtml(uid, nombre, 'chat-toast-avatar');
     }
 
     function renderChatContacts(filtro) {
@@ -3761,6 +3790,8 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         document.getElementById('profileName').textContent = name;
         document.getElementById('profileUsername').textContent = '@' + username;
         document.getElementById('profileBio').textContent = 'Cargando...';
+        const badgesRowEl = document.getElementById('profileBadgesRow');
+        if (badgesRowEl) badgesRowEl.innerHTML = '';
         renderProfileActionsViewing(uid, name, username);
 
         // El colegio y el grado NUNCA se muestran en el perfil de otra
@@ -3783,15 +3814,19 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
 
         mostrarBarraCargaPerfil();
         try {
-            const [perfilSnap, postsSnap, clasesSnap, followersSnap, followingSnap] = await Promise.all([
+            const [perfilSnap, postsSnap, clasesSnap, followersSnap, followingSnap, cuentaSnap] = await Promise.all([
                 get(ref(rtdb, 'users/' + uid + '/perfil')),
                 get(ref(rtdb, 'users/' + uid + '/posts')),
                 get(ref(rtdb, 'users/' + uid + '/clases')),
                 get(ref(rtdb, 'users/' + uid + '/followers')),
-                get(ref(rtdb, 'users/' + uid + '/following'))
+                get(ref(rtdb, 'users/' + uid + '/following')),
+                getDoc(doc(db, 'users', uid))
             ]);
 
             if (viewingProfileUid !== uid) return;
+
+            const cuentaData = cuentaSnap.exists() ? cuentaSnap.data() : {};
+            renderBadgesEnPerfil('profileBadgesRow', { email: cuentaData.email, signupNumber: cuentaData.signupNumber });
 
             const perfil = perfilSnap.exists() ? perfilSnap.val() : {};
             document.getElementById('profileBio').textContent = perfil.bio || 'Sin descripción.';
