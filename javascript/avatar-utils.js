@@ -61,14 +61,22 @@ export function indiceRarezaEmoji(emoji) {
 // Se usa tanto en el perfil grande como en cualquier avatar miniatura
 // (contactos de chat, notificaciones, toasts) para que el aro de
 // exclusividad se vea SIEMPRE igual sin importar dónde aparezca.
+//
+// A propósito hay MUCHA variedad de emojis en el tier común (1) y CADA
+// VEZ MENOS variedad a medida que sube la rareza (el legendario, tier
+// 5, solo tiene 2 posibles) -- así, aunque te salga un emoji "común",
+// se siente variado; y entre más raro el resultado, más se nota que es
+// justo ESE emoji en particular el que te tocó, no uno cualquiera de un
+// montón. La probabilidad real de cada tier sigue viniendo de los pesos
+// de EMOJIS_RULETA (arriba), esto solo agrupa índices.
 export function tierVisualEmoji(emoji) {
     const idx = indiceRarezaEmoji(emoji);
     if (idx < 0) return 0;
-    if (idx <= 1) return 1;
-    if (idx <= 4) return 2;
-    if (idx <= 9) return 3;
-    if (idx <= 16) return 4;
-    return 5;
+    if (idx <= 7) return 1;   // Común: 8 emojis distintos posibles
+    if (idx <= 13) return 2;  // Poco común: 6 emojis distintos posibles
+    if (idx <= 18) return 3;  // Raro: 5 emojis distintos posibles
+    if (idx <= 22) return 4;  // Épico: 4 emojis distintos posibles
+    return 5;                 // Legendario: solo 2 emojis distintos posibles
 }
 
 // Elige un emoji al azar respetando los pesos (el primero de la

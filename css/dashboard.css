@@ -588,11 +588,34 @@ body {
     gap: 1rem;
     transition: var(--transition);
     min-width: 0;
+    animation: cardFadeUp 0.45s ease both;
+}
+
+/* Entrada escalonada: cada tarjeta aparece un poco después que la
+   anterior en vez de todas a la vez, se siente menos "de golpe" al
+   entrar al panel. Cubre hasta 8 porque .stats-grid nunca trae más. */
+.stat-card:nth-child(1) { animation-delay: 0.02s; }
+.stat-card:nth-child(2) { animation-delay: 0.07s; }
+.stat-card:nth-child(3) { animation-delay: 0.12s; }
+.stat-card:nth-child(4) { animation-delay: 0.17s; }
+.stat-card:nth-child(5) { animation-delay: 0.22s; }
+.stat-card:nth-child(6) { animation-delay: 0.27s; }
+.stat-card:nth-child(7) { animation-delay: 0.32s; }
+.stat-card:nth-child(8) { animation-delay: 0.37s; }
+
+@keyframes cardFadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .stat-card:hover {
-    transform: translateY(-2px);
+    transform: translateY(-3px);
     box-shadow: var(--shadow);
+    border-color: rgba(0, 0, 0, 0.12);
+}
+
+.stat-card:hover .stat-icon {
+    transform: scale(1.08);
 }
 
 .stat-icon {
@@ -604,6 +627,7 @@ body {
     justify-content: center;
     font-size: 1.3rem;
     flex-shrink: 0;
+    transition: transform 0.25s ease;
 }
 
 .stat-info {
@@ -658,6 +682,8 @@ body {
     border-radius: var(--radius);
     border: 1px solid var(--border-color);
     overflow: hidden;
+    animation: cardFadeUp 0.5s ease both;
+    animation-delay: 0.1s;
 }
 
 .panel-card-header {
@@ -963,8 +989,9 @@ body {
 
 .profile-posts .posts-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
+    gap: 1rem;
     margin-bottom: 1rem;
 }
 
@@ -980,7 +1007,8 @@ body {
 
 .posts-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 320px));
+    justify-content: center;
     gap: 0.8rem;
 }
 
@@ -1066,6 +1094,8 @@ body {
 }
 
 .empty-posts {
+    grid-column: 1 / -1;
+    width: 100%;
     text-align: center;
     padding: 2rem;
     color: var(--text-secondary);
@@ -1577,6 +1607,65 @@ body {
 .img-picker-color.active {
     border-color: var(--text-primary);
     box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Swatch del fondo animado exclusivo de Admin: borde dorado con un
+   brillo que da vueltas, para que se distinga de un vistazo entre los
+   demás fondos estáticos (solo aparece en el grid si config.js decide
+   que la cuenta es Admin/Developer). */
+.img-picker-swatch-admin {
+    position: relative;
+    border-color: rgba(255, 215, 0, 0.55);
+    /* Fondo neutro mientras se carga el fotograma congelado del GIF
+       (ver congelarGifsDelGridSelector en config.js) -- así nunca se ve
+       "vacío" ni llega a reproducirse el GIF animado dentro del grid. */
+    background-color: rgba(26, 35, 50, 0.06);
+}
+
+.img-picker-swatch-admin::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 12px;
+    padding: 2px;
+    background: conic-gradient(from var(--admin-spin-angle, 0deg), #ffd700, #ff8a00, #ffd700, #7b2cbf, #ffd700);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    animation: adminSwatchSpin 3s linear infinite;
+    pointer-events: none;
+}
+
+.img-picker-swatch-admin::after {
+    content: '★';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    color: #1a2332;
+    background: rgba(255, 215, 0, 0.9);
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.img-picker-swatch-admin.active {
+    box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.5), 0 0 16px rgba(255, 215, 0, 0.35);
+}
+
+@property --admin-spin-angle {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+}
+
+@keyframes adminSwatchSpin {
+    to { --admin-spin-angle: 360deg; }
 }
 
 #imgPickerDefaultBtn {
@@ -2137,6 +2226,7 @@ body {
         flex-direction: column;
         gap: 0.5rem;
         align-items: stretch;
+        text-align: center;
     }
 
     .posts-header .btn {
@@ -2185,6 +2275,18 @@ body {
 
     .modal-body .form-row {
         grid-template-columns: 1fr;
+    }
+
+    /* Con 5 columnas fijas los swatches quedaban diminutos y pegados en
+       celular (difícil de tocar bien); en pantallas chicas se ven mejor
+       en 4 columnas más grandes. El swatch de admin sigue ocupando 2. */
+    .img-picker-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.4rem;
+    }
+
+    .img-picker-colors {
+        grid-template-columns: repeat(4, 1fr);
     }
 
     .schedule-wrapper {
@@ -2655,10 +2757,21 @@ body {
 .chat-contact-avatar.avatar-tier-2::before, .chat-toast-avatar.avatar-tier-2::before { border: 2px solid #7dd3fc; opacity: 0.85; }
 .chat-contact-avatar.avatar-tier-3::before, .chat-toast-avatar.avatar-tier-3::before { border: 2px solid #a78bfa; box-shadow: 0 0 6px rgba(167, 139, 250, 0.55); }
 .chat-contact-avatar.avatar-tier-4::before, .chat-toast-avatar.avatar-tier-4::before { border: 2px solid #fbbf24; box-shadow: 0 0 8px rgba(251, 191, 36, 0.65); }
+/* OJO: antes esto rellenaba el centro con blanco sólido
+   (linear-gradient(#fff,#fff) padding-box) para simular el borde en
+   degradado, y ese relleno terminaba tapando la foto de perfil en
+   miniatura (en chats, toasts y notificaciones) -- exactamente el
+   mismo bug que ya se había arreglado para el avatar grande del
+   perfil. Se usa la misma máscara para que el centro quede realmente
+   transparente y la foto siempre se vea, sin importar el orden en que
+   el navegador pinte las capas. */
 .chat-contact-avatar.avatar-tier-5::before, .chat-toast-avatar.avatar-tier-5::before {
     border: 2px solid transparent;
-    background: linear-gradient(#fff, #fff) padding-box,
-                linear-gradient(135deg, #f43f5e, #fbbf24, #22d3ee, #a78bfa) border-box;
+    background: linear-gradient(135deg, #f43f5e, #fbbf24, #22d3ee, #a78bfa) border-box;
+    -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
     box-shadow: 0 0 10px rgba(244, 63, 94, 0.5);
 }
 
@@ -3627,7 +3740,7 @@ html[data-tema="oscuro"] .messages-contacts {
 .profile-back-btn:hover { color: var(--primary); }
 
 .profile-banner {
-    height: 130px;
+    height: 200px;
     border-radius: var(--radius);
     background: linear-gradient(135deg, var(--accent-user, var(--primary)) 0%, var(--primary-light) 100%);
     background-size: cover;
@@ -3642,6 +3755,21 @@ html[data-tema="oscuro"] .messages-contacts {
 .profile-banner.banner-imagen,
 .profile-banner.banner-color {
     background-image: none;
+}
+
+/* Cuando el banner es el GIF exclusivo de Admin: un borde dorado que
+   "respira" en vez del contorno normal, para que el fondo animado se
+   sienta especial también fuera del picker (perfil propio y el de
+   cualquiera que visites que lo tenga puesto). El GIF en sí se mueve
+   solo -- lo pinta el navegador -- esto solo decora el marco. */
+.profile-banner.banner-imagen-admin {
+    box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.55), 0 0 22px rgba(255, 180, 0, 0.4);
+    animation: adminBannerGlow 2.6s ease-in-out infinite;
+}
+
+@keyframes adminBannerGlow {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.45), 0 0 16px rgba(255, 180, 0, 0.28); }
+    50% { box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.85), 0 0 30px rgba(255, 180, 0, 0.55); }
 }
 
 .profile-banner-overlay {
@@ -4664,7 +4792,7 @@ html[data-tema="oscuro"] .messages-contacts {
 }
 
 @media (max-width: 768px) {
-    .profile-banner { height: 96px; margin-bottom: 0; }
+    .profile-banner { height: 150px; margin-bottom: 0; }
     .profile-avatar-xl { width: 84px; height: 84px; margin-top: -42px; }
     .status-emoji-lg { width: 24px; height: 24px; font-size: 0.85rem; }
     .spotify-vinyl { inset: 0; }
@@ -4690,7 +4818,6 @@ html[data-tema="oscuro"] .messages-contacts {
 }
 
 @media (max-width: 480px) {
-    .profile-top { flex-direction: column; align-items: flex-start; }
     .profile-actions { order: 3; }
     .profile-stat-btn .stat-label, .profile-stat-static .stat-label { font-size: 0.62rem; }
     .profile-tab { padding: 0.6rem 0.7rem; font-size: 0.76rem; }
@@ -5038,11 +5165,50 @@ html[data-tema="oscuro"] .app-loader-spinner {
 .profile-badge-chip i { font-size: 0.78rem; }
 
 /* Admin/Developer: degradado oscuro con un brillo dorado, para que se
-   note de inmediato que es una cuenta "especial" del equipo. */
+   note de inmediato que es una cuenta "especial" del equipo. Además de
+   los demás badges, este trae un brillo diagonal que cruza la insignia
+   cada pocos segundos (::after) y un glow que respira en el borde, así
+   se distingue incluso a simple vistazo entre varias insignias juntas. */
 .profile-badge-developer {
+    position: relative;
+    overflow: hidden;
     background: linear-gradient(135deg, #1a2332 0%, #2c3e50 60%, #0d6efd 130%);
     border: 1px solid rgba(255, 215, 0, 0.55);
     text-shadow: 0 0 6px rgba(255, 215, 0, 0.35);
+    animation: adminBadgeGlow 2.4s ease-in-out infinite;
+}
+
+.profile-badge-developer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -60%;
+    width: 40%;
+    height: 100%;
+    background: linear-gradient(115deg, transparent 0%, rgba(255, 215, 0, 0.55) 50%, transparent 100%);
+    animation: adminBadgeShine 2.8s ease-in-out infinite;
+    pointer-events: none;
+}
+
+@keyframes adminBadgeShine {
+    0% { left: -60%; }
+    55%, 100% { left: 130%; }
+}
+
+@keyframes adminBadgeGlow {
+    0%, 100% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 0 rgba(255, 215, 0, 0); }
+    50% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0 10px rgba(255, 215, 0, 0.45); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .profile-badge-developer,
+    .profile-badge-developer::after,
+    .img-picker-swatch-admin::before,
+    .profile-banner.banner-imagen-admin,
+    .stat-card,
+    .panel-card {
+        animation: none;
+    }
 }
 
 .profile-badge-profesor {

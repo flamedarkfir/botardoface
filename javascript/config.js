@@ -1,6 +1,6 @@
 import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, arrayUnion, runTransaction, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
 import { EMOJI_SIN_REACCION, EMOJIS_RULETA, indiceRarezaEmoji, tierVisualEmoji, girarRuletaEmoji, datosExclusividadPorTier, TIER_INFO } from './avatar-utils.js';
-import { obtenerBadgesDeUsuario, construirBadgesHtml } from './badges.js';
+import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from './badges.js';
 
 (function() {
     'use strict';
@@ -958,72 +958,30 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml } from './badges.js';
         return min + ':' + String(seg).padStart(2, '0');
     }
 
-    let spotifyProgressTicker = null;
-
-    // El disco de vinilo y la barrita de progreso solo se muestran
-    // mientras la canción se considera "en vivo" (esReciente); si no,
-    // se quedan quietos para no aparentar que sigue sonando.
-    function actualizarProgresoSpotify(data, esReciente) {
-        const wrap = document.getElementById('spotifyProgressWrap');
-        const fill = document.getElementById('spotifyProgressFill');
-        const actualEl = document.getElementById('spotifyProgressCurrent');
-        const totalEl = document.getElementById('spotifyProgressTotal');
-        if (!wrap || !fill || !actualEl || !totalEl) return;
-
-        if (!data || !data.duracionMs || !esReciente) {
-            wrap.style.display = 'none';
-            return;
-        }
-
-        const transcurridoDesdeUpdate = Date.now() - (data.actualizadoEn || 0);
-        const progresoEstimado = Math.min(data.duracionMs, (data.progresoMs || 0) + transcurridoDesdeUpdate);
-        const pct = Math.min(100, (progresoEstimado / data.duracionMs) * 100);
-
-        wrap.style.display = 'flex';
-        fill.style.width = pct + '%';
-        actualEl.textContent = formatoMinutosSegundos(progresoEstimado);
-        totalEl.textContent = formatoMinutosSegundos(data.duracionMs);
-    }
-
+    // El texto de la canción y la barra de progreso se quitaron del
+    // perfil (ocupaban mucho espacio). Lo único que queda es el disco
+    // de vinilo, que gira solo mientras la canción se considera "en
+    // vivo" (esReciente); si no, se queda quieto para no aparentar que
+    // sigue sonando.
     function pintarSpotifyNowPlaying(data) {
-        const bloque = document.getElementById('profileSpotifyNow');
-        const texto = document.getElementById('profileSpotifyNowText');
         const vinilo = document.getElementById('spotifyVinyl');
         const viniloArt = document.getElementById('spotifyVinylArt');
-        if (!bloque || !texto) return;
-
-        if (spotifyProgressTicker) {
-            clearInterval(spotifyProgressTicker);
-            spotifyProgressTicker = null;
-        }
+        if (!vinilo) return;
 
         if (data && data.cancion) {
             const transcurrido = Date.now() - (data.actualizadoEn || 0);
             const esReciente = transcurrido < SPOTIFY_NOW_PLAYING_LIVE_MS;
             const cancionTexto = data.cancion + (data.artista ? ' — ' + data.artista : '');
-            texto.textContent = esReciente ? cancionTexto : (cancionTexto + ' · ' + formatoTiempoTranscurrido(transcurrido));
-            texto.title = cancionTexto;
-            bloque.classList.toggle('spotify-now-desactualizado', !esReciente);
-            // position:absolute (overlay): aparece/desaparece sin mover
-            // nada del resto del perfil, ni vertical ni horizontalmente.
-            bloque.style.display = 'flex';
+            vinilo.title = esReciente ? cancionTexto : (cancionTexto + ' · ' + formatoTiempoTranscurrido(transcurrido));
 
             // El disco solo gira cuando de verdad está sonando algo
             // ahora mismo, y va por encima del avatar (no ocupa espacio).
-            if (vinilo) {
-                vinilo.classList.toggle('is-playing', esReciente);
-                if (viniloArt) viniloArt.src = (esReciente && data.imagen) ? data.imagen : '';
-            }
-
-            actualizarProgresoSpotify(data, esReciente);
-            if (esReciente && data.duracionMs) {
-                spotifyProgressTicker = setInterval(function() { actualizarProgresoSpotify(data, true); }, 1000);
-            }
+            vinilo.classList.toggle('is-playing', esReciente);
+            if (viniloArt) viniloArt.src = (esReciente && data.imagen) ? data.imagen : '';
         } else {
-            bloque.style.display = 'none';
-            if (vinilo) vinilo.classList.remove('is-playing');
-            const wrap = document.getElementById('spotifyProgressWrap');
-            if (wrap) wrap.style.display = 'none';
+            vinilo.title = 'Sonando ahora en Spotify';
+            vinilo.classList.remove('is-playing');
+            if (viniloArt) viniloArt.src = '';
         }
     }
 
@@ -4631,6 +4589,80 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     const PROFILE_BG_PATH = '../recourses/images/backgrounds/';
     const PROFILE_BG_COUNT = 10; // background_1.webp ... background_10.webp
 
+    // Fondos animados exclusivos para cuentas Admin/Developer. Viven en
+    // el mismo folder que los demás fondos pero son .gif (no .webp), así
+    // que su "valor" sigue un patrón especial (admin_1, admin_2, ...,
+    // admin_10) para poder resolver la extensión correcta al armar la
+    // URL. Al ser un <div> con background-image, el navegador anima el
+    // GIF solo -- no hace falta JS extra para que "se mueva". Para
+    // agregar/quitar cuántos GIFs de admin hay, solo cambia este número
+    // y sube/baja los archivos admin_1.gif ... admin_N.gif.
+    const ADMIN_BG_COUNT = 10;
+    const ADMIN_BG_PATTERN = /^admin_\d+$/;
+
+    // Los GIFs de admin, si se ponen directo como background-image, el
+    // navegador los reproduce todos a la vez apenas se abre el selector
+    // (10 GIFs animándose al mismo tiempo aunque solo se vaya a elegir
+    // uno = decodificación constante = más RAM/CPU de la necesaria).
+    // Para evitarlo, en el grid del selector se muestra solo el primer
+    // fotograma "congelado" (quieto) de cada GIF, dibujado una vez en un
+    // <canvas> oculto y guardado como imagen estática. El GIF real
+    // solo se reproduce donde SÍ importa que se mueva: el banner ya
+    // aplicado en el perfil (ver aplicarBannerPerfilView). El resultado
+    // se cachea por URL para no repetir el trabajo cada vez que se abre
+    // el selector en la misma sesión.
+    const gifFrameCache = new Map();
+
+    function obtenerFotogramaEstaticoGif(url) {
+        if (gifFrameCache.has(url)) return Promise.resolve(gifFrameCache.get(url));
+        return new Promise(function(resolve) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function() {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth || 1;
+                    canvas.height = img.naturalHeight || 1;
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                    const dataUrl = canvas.toDataURL('image/png');
+                    gifFrameCache.set(url, dataUrl);
+                    resolve(dataUrl);
+                } catch (err) {
+                    // Si algo falla (p. ej. CORS), simplemente no congelamos
+                    // este y dejamos que se resuelva sin imagen estática;
+                    // el swatch se queda con el fondo neutro de respaldo.
+                    resolve(null);
+                }
+            };
+            img.onerror = function() { resolve(null); };
+            img.src = url;
+        });
+    }
+
+    // Recorre los swatches de GIF de admin recién insertados en el grid
+    // y les pone su fotograma congelado como fondo (en vez del GIF
+    // animado), uno por uno, sin bloquear el resto de la UI.
+    function congelarGifsDelGridSelector(grid) {
+        if (!grid) return;
+        grid.querySelectorAll('.img-picker-swatch-admin[data-gif-url]').forEach(function(btn) {
+            const url = btn.dataset.gifUrl;
+            if (!url) return;
+            obtenerFotogramaEstaticoGif(url).then(function(dataUrl) {
+                if (dataUrl) btn.style.backgroundImage = `url('${dataUrl}')`;
+            });
+        });
+    }
+
+    // Resuelve la URL de un "valor" de fondo/avatar guardado, sin importar
+    // si es uno de los background_N.webp normales o uno de los GIF
+    // especiales de admins. Centralizado acá para no repetir el if en
+    // cada sitio que pinta un fondo (picker, preview, banner real,
+    // avatar miniatura...).
+    function resolverUrlImagenPerfil(valor) {
+        if (ADMIN_BG_PATTERN.test(valor)) return PROFILE_BG_PATH + valor + '.gif';
+        return PROFILE_BG_PATH + valor + '.webp';
+    }
+
     // Paleta de colores sólidos para quien prefiera un banner sin imagen.
     const BANNER_COLORS = ['#1a2332', '#0d6efd', '#7b2cbf', '#d81b60', '#2e7d32', '#e65100', '#00838f', '#c62828', '#f9a825', '#4527a0', '#37474f', '#ad1457'];
 
@@ -4649,13 +4681,17 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         const bannerEl = document.getElementById('profileBanner');
         if (!bannerEl) return;
         banner = banner || { tipo: 'default' };
-        bannerEl.classList.remove('banner-imagen', 'banner-color');
+        bannerEl.classList.remove('banner-imagen', 'banner-color', 'banner-imagen-admin');
         bannerEl.style.backgroundImage = '';
         bannerEl.style.backgroundColor = '';
         bannerEl.style.backgroundPosition = '';
         if (banner.tipo === 'imagen' && banner.valor) {
             bannerEl.classList.add('banner-imagen');
-            bannerEl.style.backgroundImage = `url('${PROFILE_BG_PATH}${banner.valor}.webp')`;
+            // Marca aparte para el GIF de admin: le da un borde/glow distinto
+            // (ver .profile-banner.banner-imagen-admin en dashboard.css) para
+            // que se note que ese perfil trae el fondo animado exclusivo.
+            bannerEl.classList.toggle('banner-imagen-admin', ADMIN_BG_PATTERN.test(banner.valor));
+            bannerEl.style.backgroundImage = `url('${resolverUrlImagenPerfil(banner.valor)}')`;
             bannerEl.style.backgroundPosition = `${banner.posX != null ? banner.posX : 50}% ${banner.posY != null ? banner.posY : 50}%`;
         } else if (banner.tipo === 'color' && banner.valor) {
             bannerEl.classList.add('banner-color');
@@ -4668,7 +4704,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         if (!img) return;
         avatar = avatar || { tipo: 'default' };
         if (avatar.tipo === 'imagen' && avatar.valor) {
-            img.src = PROFILE_BG_PATH + avatar.valor + '.webp';
+            img.src = resolverUrlImagenPerfil(avatar.valor);
             img.style.objectPosition = `${avatar.posX != null ? avatar.posX : 50}% ${avatar.posY != null ? avatar.posY : 50}%`;
         } else {
             img.src = '../recourses/images/S/notfound.webp';
@@ -4738,14 +4774,60 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     // admite un color sólido liso para quien no quiera usar imágenes.
     let imgPickerState = null;
 
-    function construirGridImagenesHtml(seleccionActual) {
+    function construirGridImagenesHtml(seleccionActual, esAdmin) {
         let html = '';
+        // Los 10 GIFs de admin van primero para que la opción "especial"
+        // no se pierda entre los demás fondos; solo se pintan si a la
+        // cuenta le toca la insignia Admin/Developer (ver
+        // esCorreoDeveloper en badges.js), así que un usuario normal
+        // nunca los ve ni los puede elegir aunque adivine el valor a
+        // mano. Mismo tamaño de casilla que los fondos normales (antes
+        // el único GIF de admin ocupaba 2 casillas y se veía enorme al
+        // lado de los demás).
+        if (esAdmin) {
+            for (let i = 1; i <= ADMIN_BG_COUNT; i++) {
+                const valor = 'admin_' + i;
+                const activaAdmin = seleccionActual === valor;
+                // A propósito NO se pone el GIF animado como background-image
+                // acá: se deja quieto (fondo neutro) hasta que
+                // congelarGifsDelGridSelector() le ponga su fotograma
+                // congelado. Así, al abrir el selector, ningún GIF se pone
+                // a reproducir de una -- solo se ve una miniatura fija.
+                html += `<button type="button" class="img-picker-swatch img-picker-swatch-admin${activaAdmin ? ' active' : ''}" data-valor="${valor}" data-gif-url="${resolverUrlImagenPerfil(valor)}" aria-label="Fondo animado Admin ${i}" title="Exclusivo Admin #${i}"></button>`;
+            }
+        }
         for (let i = 1; i <= PROFILE_BG_COUNT; i++) {
             const valor = 'background_' + i;
             const activa = seleccionActual === valor;
-            html += `<button type="button" class="img-picker-swatch${activa ? ' active' : ''}" data-valor="${valor}" style="background-image:url('${PROFILE_BG_PATH}${valor}.webp');" aria-label="Imagen ${i}"></button>`;
+            html += `<button type="button" class="img-picker-swatch${activa ? ' active' : ''}" data-valor="${valor}" style="background-image:url('${resolverUrlImagenPerfil(valor)}');" aria-label="Imagen ${i}"></button>`;
         }
         return html;
+    }
+
+    // El banner real (.profile-banner) mide el ancho completo de la
+    // tarjeta de perfil, que cambia según la pantalla; la vista previa
+    // del selector, en cambio, vive dentro de un modal angosto. Si la
+    // vista previa usara un alto fijo (como antes), su proporción no
+    // coincidiría con la del banner real y el "cover" recortaría la
+    // imagen distinto en cada lado -- por eso al guardar el resultado
+    // no se veía "tal cual" se había visto en el selector. Acá se copia
+    // la proporción real del banner (ancho/alto) a la vista previa justo
+    // al abrir el selector, para que el recorte que se ve sea el mismo
+    // que va a quedar aplicado. El avatar no necesita esto: siempre es
+    // un círculo perfecto (1:1) sin importar el tamaño de pantalla.
+    function sincronizarProporcionPreviewBanner() {
+        const preview = document.getElementById('imgPickerPreview');
+        const bannerReal = document.getElementById('profileBanner');
+        if (!preview || !bannerReal) return;
+        const w = bannerReal.clientWidth;
+        const h = bannerReal.clientHeight;
+        if (w > 0 && h > 0) {
+            preview.style.aspectRatio = w + ' / ' + h;
+            preview.style.height = 'auto';
+        } else {
+            preview.style.aspectRatio = '';
+            preview.style.height = '';
+        }
     }
 
     function actualizarPreviewImgPicker() {
@@ -4753,7 +4835,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         if (!preview || !imgPickerState) return;
         preview.className = 'img-picker-preview' + (imgPickerState.tipo === 'avatar' ? ' img-picker-preview-avatar' : '');
         if (imgPickerState.tipoSeleccion === 'imagen' && imgPickerState.valor) {
-            preview.style.backgroundImage = `url('${PROFILE_BG_PATH}${imgPickerState.valor}.webp')`;
+            preview.style.backgroundImage = `url('${resolverUrlImagenPerfil(imgPickerState.valor)}')`;
             preview.style.backgroundColor = '';
             preview.style.backgroundPosition = `${imgPickerState.posX}% ${imgPickerState.posY}%`;
         } else if (imgPickerState.tipoSeleccion === 'color' && imgPickerState.valor) {
@@ -4843,8 +4925,21 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         document.getElementById('imgPickerPosX').value = imgPickerState.posX;
         document.getElementById('imgPickerPosY').value = imgPickerState.posY;
 
+        if (tipo === 'banner') {
+            sincronizarProporcionPreviewBanner();
+        } else {
+            const preview = document.getElementById('imgPickerPreview');
+            if (preview) { preview.style.aspectRatio = ''; preview.style.height = ''; }
+        }
+
+        // El GIF animado solo se ofrece para el banner (es "un fondo", no
+        // tiene sentido como foto de perfil circular) y solo si la cuenta
+        // tiene la insignia Admin/Developer.
+        const esAdmin = tipo === 'banner' && !!(currentUserData && esCorreoDeveloper(currentUserData.email));
+
         const grid = document.getElementById('imgPickerGrid');
-        grid.innerHTML = construirGridImagenesHtml(imgPickerState.tipoSeleccion === 'imagen' ? imgPickerState.valor : null);
+        grid.innerHTML = construirGridImagenesHtml(imgPickerState.tipoSeleccion === 'imagen' ? imgPickerState.valor : null, esAdmin);
+        if (esAdmin) congelarGifsDelGridSelector(grid);
         grid.querySelectorAll('.img-picker-swatch').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 imgPickerState.tipoSeleccion = 'imagen';
@@ -4902,9 +4997,11 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             perfilImagenes[tipo] = datos;
             if (tipo === 'banner') {
                 aplicarBannerPerfilView(datos);
+                agregarNotificacionSistema('Banner actualizado', 'Cambiaste el banner de tu perfil.', 'section-perfil');
             } else {
                 aplicarAvatarPerfilView(datos);
                 aplicarAvatarPerfilView(datos, document.getElementById('userAvatar'));
+                agregarNotificacionSistema('Foto de perfil actualizada', 'Cambiaste tu foto de perfil.', 'section-perfil');
             }
             cerrarSelectorImagen();
         } catch (err) {
