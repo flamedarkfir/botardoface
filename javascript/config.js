@@ -1380,17 +1380,49 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         void avatarBox.offsetWidth;
         avatarBox.classList.add('emoji-reveal-anim');
 
-        // La insignia del emoji también crece según la exclusividad del
-        // resultado (más raro = más grande), pero sin taparle nunca la
-        // foto de perfil: ver .emoji-tier-N en dashboard.css, que además
-        // de agrandar el emoji lo va corriendo hacia afuera de la
-        // esquina. Esto solo se aplica al entrar a un perfil (aquí),
-        // nunca en avatares chicos de otras partes de la app.
+        // La insignia del emoji también se anima más según la
+        // exclusividad del resultado (más raro = más brillo/pulso),
+        // pero el tamaño y la posición no cambian nunca, para no
+        // taparle la foto de perfil. Solo se aplica al entrar a un
+        // perfil (aquí), nunca en avatares chicos de otras partes de
+        // la app.
         const emojiBadge = document.getElementById('statusEmoji');
         if (emojiBadge) {
             for (let t = 2; t <= 5; t++) emojiBadge.classList.remove('emoji-tier-' + t);
             if (tier >= 2) emojiBadge.classList.add('emoji-tier-' + tier);
         }
+
+        lanzarLluviaDeEmojis(emoji, tier);
+    }
+
+    // A partir de "épico" (tier 4) caen unos emojis de fondo dentro del
+    // banner del perfil, para que se note que la cuenta es de las más
+    // exclusivas. Queda contenido dentro de .profile-banner (que ya
+    // tiene overflow:hidden), así que nunca tapa la foto de perfil, y
+    // se limpia solo después de la animación.
+    function lanzarLluviaDeEmojis(emoji, tier) {
+        const banner = document.getElementById('profileBanner');
+        if (!banner) return;
+        const anterior = banner.querySelector('.emoji-rain-layer');
+        if (anterior) anterior.remove();
+        if (tier < 4) return;
+
+        const capa = document.createElement('div');
+        capa.className = 'emoji-rain-layer';
+        const cantidad = tier === 5 ? 16 : 10;
+        for (let i = 0; i < cantidad; i++) {
+            const span = document.createElement('span');
+            span.textContent = emoji;
+            span.style.left = Math.random() * 96 + '%';
+            span.style.animationDuration = (1.6 + Math.random() * 1.2) + 's';
+            span.style.animationDelay = (Math.random() * 0.9) + 's';
+            span.style.fontSize = (0.9 + Math.random() * 0.7) + 'rem';
+            capa.appendChild(span);
+        }
+        banner.appendChild(capa);
+        setTimeout(function() {
+            if (capa.parentNode) capa.remove();
+        }, 3200);
     }
 
     // Elige un emoji al azar respetando los pesos (el primero de la
@@ -1524,6 +1556,93 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
     }
 
+    // --- Tarjeta de exclusividad: explica qué es el aro/insignia del
+    // emoji y qué tan raro (o común) es cada resultado posible de la
+    // ruleta, agrupado en los mismos 5 tiers que usan el aro y la
+    // insignia visualmente. Los porcentajes se calculan una sola vez
+    // a partir de los pesos reales de EMOJIS_RULETA, así que si el
+    // peso de algún emoji cambia, la tarjeta se actualiza sola.
+    const TIER_INFO = [
+        { tier: 1, nombre: 'Común', color: '#94a3b8' },
+        { tier: 2, nombre: 'Poco común', color: '#7dd3fc' },
+        { tier: 3, nombre: 'Raro', color: '#a78bfa' },
+        { tier: 4, nombre: 'Épico', color: '#fbbf24' },
+        { tier: 5, nombre: 'Legendario', color: '#f43f5e' }
+    ];
+
+    function datosExclusividadPorTier() {
+        const pesoTotal = EMOJIS_RULETA.reduce(function(acc, e) { return acc + e.peso; }, 0);
+        const grupos = TIER_INFO.map(function(info) {
+            return Object.assign({ emojis: [], porcentaje: 0 }, info);
+        });
+        EMOJIS_RULETA.forEach(function(e) {
+            const tier = tierVisualEmoji(e.emoji);
+            const grupo = grupos[tier - 1];
+            if (!grupo) return;
+            grupo.emojis.push(e.emoji);
+            grupo.porcentaje += (e.peso / pesoTotal) * 100;
+        });
+        return grupos;
+    }
+
+    function buildExclusividadModal() {
+        if (document.getElementById('exclusividadOverlay')) return;
+        const grupos = datosExclusividadPorTier();
+        const filas = grupos.map(function(g) {
+            const pct = g.porcentaje >= 1 ? g.porcentaje.toFixed(1) : g.porcentaje.toFixed(2);
+            return `
+                <div class="tier-info-row">
+                    <span class="tier-info-swatch" style="background:${g.color};"></span>
+                    <div class="tier-info-text">
+                        <strong>${g.nombre}</strong>
+                        <span class="tier-info-pct">~${pct}% de probabilidad</span>
+                    </div>
+                    <div class="tier-info-emojis">${g.emojis.join(' ')}</div>
+                </div>
+            `;
+        }).join('');
+
+        const html = `
+            <div class="modal-overlay" id="exclusividadOverlay">
+                <div class="modal">
+                    <div class="modal-header">
+                        <h3><i class="fas fa-star"></i> Exclusividad del emoji</h3>
+                        <button class="modal-close" id="exclusividadClose">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="user-profile-empty">
+                            Cada vez que giras la ruleta te puede tocar un emoji distinto, y no todos
+                            son igual de comunes. Entre más raro sea el que te salió, más llamativo se
+                            ve el aro alrededor de tu foto de perfil (y a partir de "Épico" hasta caen
+                            emojis de fondo cuando alguien abre tu perfil). Así se sabe, sin decir nada,
+                            qué tan exclusiva es tu cuenta.
+                        </p>
+                        <div class="tier-info-list">${filas}</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-cancel" id="exclusividadOk">Entendido</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', html);
+        document.getElementById('exclusividadClose').addEventListener('click', closeExclusividadModal);
+        document.getElementById('exclusividadOk').addEventListener('click', closeExclusividadModal);
+        document.getElementById('exclusividadOverlay').addEventListener('click', function(e) {
+            if (e.target === this) closeExclusividadModal();
+        });
+    }
+
+    function openExclusividadModal() {
+        buildExclusividadModal();
+        document.getElementById('exclusividadOverlay').classList.add('open');
+    }
+
+    function closeExclusividadModal() {
+        const overlay = document.getElementById('exclusividadOverlay');
+        if (overlay) overlay.classList.remove('open');
+    }
+
     function initPerfil() {
         const bioEdit = document.getElementById('bioEdit');
         const bioTextEl = document.getElementById('profileBio');
@@ -1559,6 +1678,10 @@ import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauth
         }
 
         const emojiEl = document.getElementById('statusEmoji');
+        const exclusividadInfoBtn = document.getElementById('exclusividadInfoBtn');
+        if (exclusividadInfoBtn) {
+            exclusividadInfoBtn.addEventListener('click', openExclusividadModal);
+        }
         if (emojiEl) {
             emojiEl.addEventListener('click', function() {
                 if (viewingProfileUid) return;
