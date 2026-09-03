@@ -1,4 +1,4 @@
-import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, googleProvider, githubProvider, doc, setDoc, collection, query, where, getDocs } from './firebase-config.js';
+import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, onAuthStateChanged, googleProvider, githubProvider, doc, setDoc, collection, query, where, getDocs } from './firebase-config.js';
 
 (function() {
     'use strict';
@@ -47,6 +47,45 @@ import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, s
 
     var menuToggle = document.getElementById('menuToggle');
     var navMenu = document.getElementById('navMenu');
+
+    // ===== Overlay de carga =====
+    // Se usa para dos cosas: 1) taparle al usuario el formulario mientras
+    // se confirma si ya tiene una sesión activa (así no ve el login
+    // "parpadear" antes de mandarlo al dashboard), y 2) darle feedback
+    // claro mientras espera la respuesta del popup de Google/GitHub.
+    var authOverlay = document.getElementById('authOverlay');
+    var authOverlayText = document.getElementById('authOverlayText');
+    var googleBtn = document.querySelector('.social-btn.google');
+    var githubBtn = document.querySelector('.social-btn.github');
+
+    function showAuthOverlay(text) {
+        if (authOverlayText) authOverlayText.textContent = text;
+        if (authOverlay) authOverlay.classList.remove('hidden');
+    }
+
+    function hideAuthOverlay() {
+        if (authOverlay) authOverlay.classList.add('hidden');
+    }
+
+    function setSocialButtonsDisabled(disabled) {
+        if (googleBtn) googleBtn.disabled = disabled;
+        if (githubBtn) githubBtn.disabled = disabled;
+    }
+
+    // ===== Verificación de sesión al cargar la página =====
+    // Firebase tarda un instante en confirmar si ya hay una sesión guardada
+    // (persistencia local). Mientras responde, el overlay de arriba tapa
+    // el formulario. Solo nos interesa esta PRIMERA respuesta -- por eso
+    // nos desuscribimos apenas llega, así los inicios de sesión o
+    // registros que pasan después no vuelven a disparar esto.
+    var unsubscribeAuthCheck = onAuthStateChanged(auth, function(user) {
+        if (typeof unsubscribeAuthCheck === 'function') unsubscribeAuthCheck();
+        if (user) {
+            window.location.href = '../html/dashboard.html';
+        } else {
+            hideAuthOverlay();
+        }
+    });
 
     menuToggle.addEventListener('click', function() {
         navMenu.classList.toggle('active');
@@ -502,14 +541,20 @@ import { auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, s
     });
 
     function handleSocialLogin(provider, providerName) {
+        setSocialButtonsDisabled(true);
+        showAuthOverlay('Conectando con ' + providerName + '...');
+
         signInWithPopup(auth, provider)
             .then((result) => {
                 const user = result.user;
                 localStorage.setItem('botardo_remember', 'true');
                 localStorage.setItem('botardo_email', user.email);
+                showAuthOverlay('¡Listo! Entrando...');
                 window.location.href = '../html/dashboard.html';
             })
             .catch((error) => {
+                hideAuthOverlay();
+                setSocialButtonsDisabled(false);
                 const errorCode = error.code;
                 const errorMessage = error.message;
                 if (errorCode === 'auth/popup-closed-by-user') {
