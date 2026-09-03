@@ -15,8 +15,25 @@ export const DEVELOPER_EMAILS = [
 // Por ahora SOLO dan la insignia "Profesor" en el perfil. Cuando se
 // construyan las secciones especiales para profesores, este mismo
 // archivo es el punto de partida para darles esos permisos extra.
+//
+// IMPORTANTE: esta lista se deja vacía A PROPÓSITO. La insignia y el
+// panel de profesor (sección de administración) ya están listos para
+// usarse, pero todavía no se le entregan a ninguna cuenta real de
+// profesor -- eso se hará cuando el equipo confirme quiénes son.
 export const TEACHER_EMAILS = [
     // 'profesor@ejemplo.com',
+];
+
+// ----- Vista previa de la insignia/panel de Profesor -----
+// Mientras TEACHER_EMAILS siga vacío, esta lista es la ÚNICA forma de
+// ver cómo se ve la insignia "Profesor" y de probar el panel especial
+// de profesores: solo la(s) cuenta(s) de acá lo obtienen, y son las
+// mismas que DEVELOPER_EMAILS (el equipo/admin), no alumnos ni
+// profesores reales todavía. Cuando haya cuentas de profesor de
+// verdad, sus correos van en TEACHER_EMAILS (arriba) y esta lista se
+// puede dejar vacía o quitar.
+export const TEACHER_PREVIEW_EMAILS = [
+    'jhorkbecerra@gmail.com'
 ];
 
 // ----- Insignia BETA -----
@@ -34,7 +51,15 @@ export function esCorreoDeveloper(email) {
 }
 
 export function esCorreoProfesor(email) {
-    return TEACHER_EMAILS.indexOf(normalizarEmail(email)) !== -1;
+    const norm = normalizarEmail(email);
+    return TEACHER_EMAILS.indexOf(norm) !== -1 || TEACHER_PREVIEW_EMAILS.indexOf(norm) !== -1;
+}
+
+// Cuentas "staff": developer/admin O profesor (real o de vista previa).
+// Es el permiso que se usa para decidir quién ve el panel especial de
+// profesores (buscar alumno por código y editar colegio/grado/horario).
+export function esCuentaStaff(email) {
+    return esCorreoDeveloper(email) || esCorreoProfesor(email);
 }
 
 export function esBetaPorSignupNumber(signupNumber) {
@@ -93,4 +118,29 @@ export function construirBadgesHtml(badgesOrUserData) {
     return badges.map(function(b) {
         return `<span class="profile-badge-chip ${b.className}" title="${escapeHtmlLocal(b.title || b.label)}"><i class="fas ${b.icon}"></i> ${escapeHtmlLocal(b.label)}</span>`;
     }).join('');
+}
+
+// Igual que construirBadgesHtml, pero si hay más de "maxVisible"
+// insignias, solo pinta las primeras y agrega al final un chip
+// "+N" (con data-badges-more="1") en vez de seguir amontonando chips.
+// Ese chip no abre nada por sí solo -- quien lo use (el dashboard) es
+// quien decide qué hacer al hacer click en él (normalmente, abrir un
+// modal con construirBadgesHtml(todasLasInsignias) adentro).
+//
+// Devuelve { html, badges, hayOcultas } para que quien llame tenga a
+// la mano la lista completa (por si quiere armar ese modal) sin tener
+// que volver a calcular las insignias del usuario.
+export function construirBadgesHtmlConLimite(badgesOrUserData, maxVisible) {
+    const badges = Array.isArray(badgesOrUserData) ? badgesOrUserData : obtenerBadgesDeUsuario(badgesOrUserData);
+    if (!badges || badges.length === 0) return { html: '', badges: [], hayOcultas: false };
+
+    const limite = (typeof maxVisible === 'number' && maxVisible > 0) ? maxVisible : badges.length;
+    const visibles = badges.slice(0, limite);
+    const restantes = badges.length - visibles.length;
+
+    let html = construirBadgesHtml(visibles);
+    if (restantes > 0) {
+        html += `<button type="button" class="profile-badge-chip profile-badge-more" data-badges-more="1" title="Ver todas tus insignias">+${restantes}</button>`;
+    }
+    return { html: html, badges: badges, hayOcultas: restantes > 0 };
 }

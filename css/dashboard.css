@@ -5164,6 +5164,32 @@ html[data-tema="oscuro"] .app-loader-spinner {
 
 .profile-badge-chip i { font-size: 0.78rem; }
 
+/* Chip "+N": aparece en vez de seguir apilando insignias cuando hay
+   más de MAX_BADGES_VISIBLES (ver config.js). Al hacer click abre el
+   modal con todas. Se ve deliberadamente "neutro" (no es una insignia
+   real, es solo un botón para ver el resto). */
+.profile-badge-more {
+    background: rgba(26, 35, 50, 0.08);
+    color: #4a5a6e;
+    border: 1px dashed rgba(26, 35, 50, 0.25);
+    cursor: pointer;
+    box-shadow: none;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.profile-badge-more:hover {
+    background: rgba(26, 35, 50, 0.16);
+    color: #1a2332;
+}
+
+/* Dentro del modal "Todas las insignias" se permite que envuelva a
+   varias líneas y con un poco más de espacio que en la fila compacta
+   del perfil. */
+.profile-badges-row-modal {
+    margin: 0;
+    gap: 0.5rem;
+}
+
 /* Admin/Developer: degradado oscuro con un brillo dorado, para que se
    note de inmediato que es una cuenta "especial" del equipo. Además de
    los demás badges, este trae un brillo diagonal que cruza la insignia

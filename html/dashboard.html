@@ -37,6 +37,7 @@
                 <li><a href="#camara" data-section="camara"><i class="fas fa-chalkboard"></i><span>Salón</span></a></li>
                 <li><a href="#estadisticas" data-section="estadisticas"><i class="fas fa-chart-bar"></i><span>Estadísticas</span></a></li>
                 <li><a href="#configuracion" data-section="configuracion"><i class="fas fa-gear"></i><span>Configuración</span></a></li>
+                <li id="navItemProfesores" style="display:none;"><a href="#profesores" data-section="profesores"><i class="fas fa-user-tie"></i><span>Profesores</span></a></li>
                 <li class="sidebar-separator"></li>
                 <li><a href="#proyectos" data-section="proyectos"><i class="fas fa-folder-open"></i><span>Proyectos</span></a></li>
             </ul>
@@ -344,7 +345,7 @@
                     <div class="panel-card">
                         <div class="panel-card-header"><h3><i class="fas fa-school"></i> Mi colegio y grado</h3></div>
                         <div class="panel-card-body">
-                            <p class="school-grade-hint">Tu colegio lo asigna un profesor o el equipo de soporte; como estudiante no lo puedes cambiar. Tu grado sí lo escribes tú, pero <strong>solo se puede guardar una vez</strong>, revísalo bien antes de confirmar.</p>
+                            <p class="school-grade-hint">Tu colegio y tu grado los asigna un profesor o el equipo de soporte; como estudiante no los puedes cambiar desde aquí.</p>
                             <div class="school-grade-form">
                                 <div class="form-group">
                                     <label for="inputColegio"><i class="fas fa-lock"></i> Colegio</label>
@@ -353,11 +354,9 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="inputGrado"><i class="fas fa-graduation-cap"></i> Grado</label>
-                                    <input type="text" id="inputGrado" list="gradosSugeridos" placeholder="Ej. Grado 9, Décimo, 3ro de Bachillerato" autocomplete="off" />
-                                    <datalist id="gradosSugeridos"></datalist>
-                                    <div id="gradoNote" class="config-note"></div>
+                                    <input type="text" id="inputGrado" placeholder="Sin asignar aún" autocomplete="off" disabled readonly />
+                                    <div id="gradoNote" class="config-note">Bloqueado para estudiantes. Se asigna automáticamente / por un profesor o soporte.</div>
                                 </div>
-                                <button class="btn btn-secondary" id="guardarGradoBtn"><i class="fas fa-floppy-disk"></i> Guardar grado</button>
                             </div>
                         </div>
                     </div>
@@ -377,6 +376,99 @@
                 </div>
             </div>
         </section>
+
+        <!--
+            Sección solo para staff (cuentas developer/admin o profesor,
+            ver esCuentaStaff en badges.js). El propio JS oculta el
+            item del menú y esta sección para cualquier cuenta que no
+            sea staff, pero eso es solo una comodidad de interfaz: el
+            control de acceso REAL tiene que venir de las Reglas de
+            Seguridad de Firestore/Realtime Database (que ninguna
+            cuenta que no sea staff pueda escribir grado/colegio/clases
+            de otro uid), porque cualquiera podría editar este HTML o
+            llamar las funciones de Firebase directamente.
+        -->
+        <section id="section-profesores" class="dashboard-section">
+            <div class="salon-container">
+                <h2><i class="fas fa-user-tie"></i> Panel de profesores</h2>
+                <p class="salon-subtitle">Busca a un alumno por su código único y asigna o corrige su colegio, grado y horario.</p>
+
+                <div class="panel-grid" style="margin-top:1.5rem;">
+                    <div class="panel-card full-width">
+                        <div class="panel-card-header"><h3><i class="fas fa-magnifying-glass"></i> Buscar alumno</h3></div>
+                        <div class="panel-card-body">
+                            <div class="school-grade-form">
+                                <div class="form-group">
+                                    <label for="profesorCodigoInput"><i class="fas fa-id-card"></i> Código único del alumno</label>
+                                    <input type="text" id="profesorCodigoInput" placeholder="El alumno lo encuentra en Salón → Mi información → Ver" autocomplete="off" />
+                                    <div class="config-note">El alumno debe compartirte este código directamente a ti (es personal e intransferible; no debería publicarlo en ningún otro lugar).</div>
+                                </div>
+                                <button class="btn btn-primary" id="profesorBuscarBtn"><i class="fas fa-magnifying-glass"></i> Buscar</button>
+                            </div>
+                            <div id="profesorBuscarMensaje" class="config-note"></div>
+                        </div>
+                    </div>
+
+                    <div class="panel-card full-width" id="profesorResultadoCard" style="display:none;">
+                        <div class="panel-card-header"><h3><i class="fas fa-user-graduate"></i> <span id="profesorAlumnoNombre">Alumno</span></h3></div>
+                        <div class="panel-card-body">
+                            <div class="account-activity-grid">
+                                <div class="account-activity-item"><span class="activity-item-label">Usuario</span><span class="activity-item-value" id="profesorAlumnoUsername">--</span></div>
+                                <div class="account-activity-item"><span class="activity-item-label">Correo</span><span class="activity-item-value" id="profesorAlumnoEmail">--</span></div>
+                            </div>
+
+                            <div class="school-grade-form" style="margin-top:1rem;">
+                                <div class="form-group">
+                                    <label for="profesorColegioInput"><i class="fas fa-school"></i> Colegio</label>
+                                    <input type="text" id="profesorColegioInput" list="gradosColegiosSugeridos" placeholder="Nombre del colegio" autocomplete="off" />
+                                </div>
+                                <div class="form-group">
+                                    <label for="profesorGradoInput"><i class="fas fa-graduation-cap"></i> Grado</label>
+                                    <input type="text" id="profesorGradoInput" list="gradosSugeridos" placeholder="Ej. Grado 9, Décimo, 3ro de Bachillerato" autocomplete="off" />
+                                    <datalist id="gradosSugeridos"></datalist>
+                                </div>
+                                <button class="btn btn-secondary" id="profesorGuardarColegioGradoBtn"><i class="fas fa-floppy-disk"></i> Guardar colegio y grado</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-card full-width" id="profesorHorarioCard" style="display:none;">
+                        <div class="panel-card-header"><h3><i class="fas fa-calendar-alt"></i> Horario del alumno</h3></div>
+                        <div class="panel-card-body">
+                            <div id="profesorHorarioLista" class="activity-timeline"></div>
+                            <div class="school-grade-form" style="margin-top:1rem;">
+                                <div class="form-group">
+                                    <label for="profesorMateriaInput">Materia</label>
+                                    <input type="text" id="profesorMateriaInput" placeholder="Ej: Matemáticas" autocomplete="off" />
+                                </div>
+                                <div class="form-group">
+                                    <label for="profesorDiaInput">Día</label>
+                                    <select id="profesorDiaInput">
+                                        <option value="Lunes">Lunes</option>
+                                        <option value="Martes">Martes</option>
+                                        <option value="Miércoles">Miércoles</option>
+                                        <option value="Jueves">Jueves</option>
+                                        <option value="Viernes">Viernes</option>
+                                        <option value="Sábado">Sábado</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="profesorHoraInicioInput">Hora inicio</label>
+                                    <input type="time" id="profesorHoraInicioInput" value="08:00" />
+                                </div>
+                                <div class="form-group">
+                                    <label for="profesorHoraFinInput">Hora fin</label>
+                                    <input type="time" id="profesorHoraFinInput" value="09:30" />
+                                </div>
+                                <button class="btn btn-secondary" id="profesorAgregarClaseBtn"><i class="fas fa-plus"></i> Agregar clase</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <datalist id="gradosColegiosSugeridos"></datalist>
 
         <section id="section-estadisticas" class="dashboard-section">
             <div class="stats-container">

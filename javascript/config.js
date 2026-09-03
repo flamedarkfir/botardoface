@@ -1,6 +1,6 @@
 import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, arrayUnion, runTransaction, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
 import { EMOJI_SIN_REACCION, EMOJIS_RULETA, indiceRarezaEmoji, tierVisualEmoji, girarRuletaEmoji, datosExclusividadPorTier, TIER_INFO } from './avatar-utils.js';
-import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from './badges.js';
+import { obtenerBadgesDeUsuario, construirBadgesHtml, construirBadgesHtmlConLimite, esCorreoDeveloper, esCorreoProfesor, esCuentaStaff } from './badges.js';
 
 (function() {
     'use strict';
@@ -288,7 +288,8 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from '
             'section-camara': 'Salón',
             'section-proyectos': 'Proyectos',
             'section-estadisticas': 'Estadísticas',
-            'section-configuracion': 'Configuración'
+            'section-configuracion': 'Configuración',
+            'section-profesores': 'Panel de profesores'
         };
         if (pageTitle && titles[sectionId]) pageTitle.textContent = titles[sectionId];
 
@@ -315,6 +316,18 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from '
         });
     }
 
+    // Máximo de insignias que se muestran "sueltas" en la fila del
+    // perfil antes de agrupar el resto en un chip "+N" que abre un
+    // modal con todas. Así el perfil no se llena de chips si a futuro
+    // se agregan más tipos de insignia.
+    const MAX_BADGES_VISIBLES = 2;
+
+    // Guarda, por contenedor (ej. 'profileBadgesRow'), la última lista
+    // completa de insignias que se calculó para él. Se usa para poder
+    // abrir el modal "+N" con el detalle completo sin tener que volver
+    // a calcular nada.
+    const ultimasBadgesPorContenedor = {};
+
     // Pinta las insignias (Admin/Developer, Profesor, BETA) en el
     // contenedor indicado por su id. Se usa tanto para el perfil propio
     // como para el de cualquier otro usuario que se visite; basta con
@@ -323,8 +336,55 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from '
     function renderBadgesEnPerfil(contenedorId, { email, signupNumber } = {}) {
         const el = document.getElementById(contenedorId);
         if (!el) return;
-        el.innerHTML = construirBadgesHtml(obtenerBadgesDeUsuario({ email: email, signupNumber: signupNumber }));
+        const badges = obtenerBadgesDeUsuario({ email: email, signupNumber: signupNumber });
+        const { html, badges: todas } = construirBadgesHtmlConLimite(badges, MAX_BADGES_VISIBLES);
+        el.innerHTML = html;
+        ultimasBadgesPorContenedor[contenedorId] = todas;
     }
+
+    function abrirModalBadges(todasLasInsignias) {
+        const overlay = document.getElementById('badgesModalOverlay');
+        const body = document.getElementById('badgesModalBody');
+        if (!overlay || !body) return;
+        body.innerHTML = `<div class="profile-badges-row profile-badges-row-modal">${construirBadgesHtml(todasLasInsignias)}</div>`;
+        overlay.classList.add('open');
+    }
+
+    function buildBadgesModal() {
+        if (document.getElementById('badgesModalOverlay')) return;
+        const html = `
+            <div class="modal-overlay" id="badgesModalOverlay">
+                <div class="modal">
+                    <div class="modal-header">
+                        <h3>Todas las insignias</h3>
+                        <button class="modal-close" id="badgesModalClose">&times;</button>
+                    </div>
+                    <div class="modal-body" id="badgesModalBody"></div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', html);
+        const overlay = document.getElementById('badgesModalOverlay');
+        const closeBtn = document.getElementById('badgesModalClose');
+        if (closeBtn) closeBtn.addEventListener('click', function() { overlay.classList.remove('open'); });
+        if (overlay) {
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) overlay.classList.remove('open');
+            });
+        }
+    }
+
+    // Delegación de eventos: como los chips "+N" se regeneran cada vez
+    // que se pinta un perfil (propio o ajeno), enganchamos el click al
+    // document en vez de a cada chip individualmente.
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-badges-more]');
+        if (!btn) return;
+        const fila = btn.closest('.profile-badges-row');
+        const contenedorId = fila ? fila.id : null;
+        const todas = contenedorId ? ultimasBadgesPorContenedor[contenedorId] : null;
+        if (todas) abrirModalBadges(todas);
+    });
 
     // Le asigna a una cuenta su "número de registro" (1, 2, 3...) LA
     // PRIMERA VEZ que se detecta que no tiene uno, usando una
@@ -472,34 +532,52 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from '
         }).join('') : '';
     }
 
+    // IMPORTANTE (cambio de criterio): el grado YA NO lo elige ni lo
+    // edita el estudiante, ni siquiera una vez. Igual que el colegio,
+    // queda bloqueado del lado del estudiante: se lo asigna un
+    // profesor o el equipo de soporte/admin (ver initPanelProfesores
+    // más abajo para el panel donde el staff lo hace desde la app).
+    // Se deja este helper porque sigue siendo útil para actualizar el
+    // texto de ayuda si en el futuro cambia el estado del grado.
     function actualizarNotaGrado() {
         const note = document.getElementById('gradoNote');
-        const guardarBtn = document.getElementById('guardarGradoBtn');
-        const inputGradoEl = document.getElementById('inputGrado');
-        const yaSeCambio = !!(currentUserData && currentUserData.gradoChanged);
         if (note) {
-            note.innerHTML = yaSeCambio
-                ? `Ya elegiste tu grado y no se puede volver a cambiar. Si te equivocaste, escribe a <a href="mailto:${SOPORTE_EMAIL}">soporte</a>.`
-                : 'Tu colegio lo asigna un profesor o el equipo de soporte (el estudiante no puede cambiarlo). Tu grado sí lo puedes escribir tú, pero solo una vez: revísalo bien antes de guardar.';
+            note.textContent = 'Tu colegio y tu grado los asigna un profesor o el equipo de soporte. Como estudiante no los puedes cambiar desde aquí.';
         }
-        if (guardarBtn) guardarBtn.disabled = yaSeCambio;
-        if (inputGradoEl) inputGradoEl.disabled = yaSeCambio;
     }
 
-    // Guarda SOLO el grado. El colegio ya no lo puede tocar el
-    // estudiante desde aquí: queda en lo que tenga guardado
-    // actualmente (vacío hasta que un profesor/admin lo asigne, o lo
-    // que ya tuviera antes de este cambio).
-    async function guardarGradoUsuario(gradoNombre) {
-        await setDoc(doc(db, 'users', currentUser.uid), {
+    // Guarda el grado de un usuario. SOLO debe llamarse desde el panel
+    // de profesores/admin (initPanelProfesores), nunca desde una
+    // acción disponible para el propio estudiante -- el estudiante ya
+    // no tiene ninguna forma de editar su grado en la interfaz.
+    //
+    // MUY IMPORTANTE: esto es solo la parte del cliente. Que el botón
+    // no aparezca para estudiantes no es seguridad de verdad -- eso
+    // tiene que reforzarse con las Reglas de Seguridad de Firestore,
+    // para que el propio backend de Firebase rechace cualquier
+    // escritura de "grado"/"colegio" que no venga de una cuenta de
+    // staff (developer o profesor), sin importar qué mande el cliente.
+    async function guardarGradoComoStaff(uid, gradoNombre) {
+        await setDoc(doc(db, 'users', uid), {
             grado: gradoNombre,
             gradoChanged: true
         }, { merge: true });
-        currentUserData.grado = gradoNombre;
-        currentUserData.gradoChanged = true;
-        loadUserData();
-        actualizarNotaGrado();
-        cargarAsistenciasSalon();
+        if (uid === currentUser.uid) {
+            currentUserData.grado = gradoNombre;
+            currentUserData.gradoChanged = true;
+            loadUserData();
+            cargarAsistenciasSalon();
+        }
+    }
+
+    // Igual que guardarGradoComoStaff, pero para el colegio.
+    async function guardarColegioComoStaff(uid, colegioNombre) {
+        await setDoc(doc(db, 'users', uid), { colegio: colegioNombre }, { merge: true });
+        if (uid === currentUser.uid) {
+            currentUserData.colegio = colegioNombre;
+            loadUserData();
+            cargarAsistenciasSalon();
+        }
     }
 
     async function initGradoColegio() {
@@ -507,14 +585,10 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from '
 
         const inputColegioEl = document.getElementById('inputColegio');
         const inputGradoEl = document.getElementById('inputGrado');
-        const guardarBtn = document.getElementById('guardarGradoBtn');
 
-        // El colegio queda siempre bloqueado para el estudiante: solo se
-        // muestra el que ya tenga asignado (o vacío si aún no le han
-        // asignado ninguno). Solo un profesor/admin o soporte pueden
-        // cambiarlo (por ahora, directamente desde el panel de Firebase;
-        // la sección especial de profesores para hacerlo desde la app
-        // llegará más adelante).
+        // Tanto el colegio como el grado quedan siempre bloqueados
+        // para el estudiante: solo se muestra lo que ya tenga
+        // asignado (o vacío si todavía no le han asignado nada).
         if (inputColegioEl) {
             inputColegioEl.value = (currentUserData && currentUserData.colegio) || '';
             inputColegioEl.placeholder = 'Sin asignar aún';
@@ -524,46 +598,270 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, esCorreoDeveloper } from '
         }
         if (inputGradoEl) {
             inputGradoEl.value = (currentUserData && currentUserData.grado) || '';
+            inputGradoEl.placeholder = 'Sin asignar aún';
+            inputGradoEl.disabled = true;
+            inputGradoEl.title = 'Solo un profesor o soporte pueden asignar tu grado.';
         }
 
-        if (guardarBtn) {
-            guardarBtn.addEventListener('click', async function() {
-                if (currentUserData && currentUserData.gradoChanged) {
-                    alert(`Ya elegiste tu grado. Escribe a ${SOPORTE_EMAIL} para cambiarlo.`);
-                    return;
-                }
-                const gradoTexto = inputGradoEl ? inputGradoEl.value.trim() : '';
-                if (!gradoTexto) {
-                    alert('Escribe tu grado antes de guardar.');
-                    return;
-                }
-                if (!confirm(`¿Seguro que quieres guardar "${gradoTexto}" como tu grado? Solo podrás hacerlo una vez; para cambios futuros tendrás que contactar a soporte.`)) return;
+        actualizarNotaGrado();
+    }
 
-                guardarBtn.disabled = true;
+    // --- Panel de profesores (staff) ---
+    // Visible solo para cuentas developer/admin o profesor (real o de
+    // vista previa, ver esCuentaStaff en badges.js). Permite buscar a
+    // un alumno por su código único (botardoId) y asignarle/corregirle
+    // el colegio, el grado y el horario -- las tres cosas que un
+    // estudiante ya no puede tocar por sí mismo.
+    //
+    // RECORDATORIO DE SEGURIDAD: esto solo oculta el botón/sección en
+    // la interfaz. Para que sea seguro de verdad hace falta que las
+    // Security Rules de Firestore y de Realtime Database verifiquen,
+    // del lado del servidor, que quien escribe el grado/colegio/clases
+    // de OTRO uid sea efectivamente una cuenta de staff -- de lo
+    // contrario cualquiera con las herramientas de desarrollador del
+    // navegador podría llamar las mismas funciones sin ser profesor.
+    let profesorTargetUid = null;
+    let profesorTargetData = null;
+    let profesorClasesCache = [];
+
+    function esCuentaStaffActual() {
+        return !!(currentUserData && esCuentaStaff(currentUserData.email));
+    }
+
+    async function buscarAlumnoPorCodigo(codigo) {
+        const q = query(collection(db, 'users'), where('botardoId', '==', codigo));
+        const snap = await getDocs(q);
+        if (snap.empty) return null;
+        // botardoId debería ser único por diseño (se genera con
+        // randomUUID), pero por seguridad se toma el primer resultado
+        // si por algún motivo hubiera más de uno.
+        const docSnap = snap.docs[0];
+        return { uid: docSnap.id, data: docSnap.data() };
+    }
+
+    function renderHorarioAlumnoLista() {
+        const cont = document.getElementById('profesorHorarioLista');
+        if (!cont) return;
+        if (profesorClasesCache.length === 0) {
+            cont.innerHTML = '<p class="social-empty">Este alumno todavía no tiene clases en su horario.</p>';
+            return;
+        }
+        const filas = [];
+        profesorClasesCache.forEach(function(clase) {
+            const dias = Array.isArray(clase.dias) ? clase.dias : [clase.dias].filter(Boolean);
+            dias.forEach(function(dia) {
+                filas.push({ id: clase.id, dia: dia, nombre: clase.nombre, horaInicio: clase.horaInicio, horaFin: clase.horaFin });
+            });
+        });
+        cont.innerHTML = filas.map(function(f) {
+            return `
+                <div class="social-list-item">
+                    <div class="social-list-identity">
+                        <span class="social-list-name">${escapeHtml(f.dia)} — ${escapeHtml(f.nombre)}</span>
+                        <div class="social-list-username">${escapeHtml(f.horaInicio || '')} – ${escapeHtml(f.horaFin || '')}</div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" data-eliminar-clase-id="${escapeForAttr(f.id)}"><i class="fas fa-trash"></i></button>
+                </div>
+            `;
+        }).join('');
+        cont.querySelectorAll('[data-eliminar-clase-id]').forEach(function(btn) {
+            btn.addEventListener('click', async function() {
+                const id = this.dataset.eliminarClaseId;
+                if (!confirm('¿Eliminar esta clase del horario del alumno?')) return;
                 try {
-                    const colegioActual = (currentUserData && currentUserData.colegio) || '';
-                    const normColegio = normalizarTextoComparacion(colegioActual);
-                    const colegioExistente = normColegio ? colegiosCache.find(function(c) { return normalizarTextoComparacion(c.nombre) === normColegio; }) : null;
-
-                    if (colegioExistente) {
-                        const normGrado = normalizarTextoComparacion(gradoTexto);
-                        const gradoExistente = colegioExistente.grados.find(function(g) { return normalizarTextoComparacion(g) === normGrado; });
-                        if (!gradoExistente) {
-                            await setDoc(doc(db, 'colegios', colegioExistente.id), { grados: arrayUnion(gradoTexto) }, { merge: true });
-                            colegioExistente.grados.push(gradoTexto);
-                        }
-                    }
-                    await guardarGradoUsuario(gradoTexto);
-                    alert('Tu grado se guardó correctamente.');
+                    await remove(ref(rtdb, 'users/' + profesorTargetUid + '/clases/' + id));
+                    profesorClasesCache = profesorClasesCache.filter(function(c) { return c.id !== id; });
+                    renderHorarioAlumnoLista();
                 } catch (err) {
-                    console.error('Error guardando grado:', err);
-                    alert('No se pudo guardar: ' + (err.code || err.message));
-                    guardarBtn.disabled = false;
+                    console.error('Error eliminando clase (staff):', err);
+                    alert('No se pudo eliminar: ' + (err.code || err.message));
+                }
+            });
+        });
+    }
+
+    async function cargarHorarioAlumno(uid) {
+        try {
+            const snap = await get(ref(rtdb, 'users/' + uid + '/clases'));
+            profesorClasesCache = [];
+            if (snap.exists()) {
+                snap.forEach(function(c) { profesorClasesCache.push(Object.assign({ id: c.key }, c.val())); });
+            }
+            renderHorarioAlumnoLista();
+        } catch (err) {
+            console.error('Error cargando horario del alumno (staff):', err);
+        }
+    }
+
+    async function agregarClaseComoStaff(uid, datos) {
+        const newRef = push(ref(rtdb, 'users/' + uid + '/clases'));
+        const claseData = {
+            nombre: datos.nombre,
+            icono: 'fa-chalkboard-user',
+            color: '#e8eaf6',
+            colorText: '#283593',
+            dias: [datos.dia],
+            horaInicio: datos.horaInicio,
+            horaFin: datos.horaFin
+        };
+        await set(newRef, claseData);
+        profesorClasesCache.push(Object.assign({ id: newRef.key }, claseData));
+        renderHorarioAlumnoLista();
+    }
+
+    function mostrarResultadoAlumno(uid, data) {
+        profesorTargetUid = uid;
+        profesorTargetData = data;
+
+        const resultadoCard = document.getElementById('profesorResultadoCard');
+        const horarioCard = document.getElementById('profesorHorarioCard');
+        if (resultadoCard) resultadoCard.style.display = '';
+        if (horarioCard) horarioCard.style.display = '';
+
+        const nombreEl = document.getElementById('profesorAlumnoNombre');
+        const usernameEl = document.getElementById('profesorAlumnoUsername');
+        const emailEl = document.getElementById('profesorAlumnoEmail');
+        if (nombreEl) nombreEl.textContent = data.name || 'Alumno';
+        if (usernameEl) usernameEl.textContent = '@' + (data.username || 'sin_usuario');
+        if (emailEl) emailEl.textContent = data.email || '--';
+
+        const colegioInput = document.getElementById('profesorColegioInput');
+        const gradoInput = document.getElementById('profesorGradoInput');
+        if (colegioInput) colegioInput.value = data.colegio || '';
+        if (gradoInput) gradoInput.value = data.grado || '';
+        renderGradosDatalistParaColegio(colegioInput ? colegioInput.value : '');
+
+        cargarHorarioAlumno(uid);
+    }
+
+    function limpiarResultadoAlumno(mensaje) {
+        profesorTargetUid = null;
+        profesorTargetData = null;
+        profesorClasesCache = [];
+        const resultadoCard = document.getElementById('profesorResultadoCard');
+        const horarioCard = document.getElementById('profesorHorarioCard');
+        if (resultadoCard) resultadoCard.style.display = 'none';
+        if (horarioCard) horarioCard.style.display = 'none';
+        const msgEl = document.getElementById('profesorBuscarMensaje');
+        if (msgEl) msgEl.textContent = mensaje || '';
+    }
+
+    async function initPanelProfesores() {
+        const navItem = document.getElementById('navItemProfesores');
+        if (!esCuentaStaffActual()) {
+            if (navItem) navItem.style.display = 'none';
+            return;
+        }
+        if (navItem) navItem.style.display = '';
+
+        await cargarColegios();
+        const colegiosDatalist = document.getElementById('gradosColegiosSugeridos');
+        if (colegiosDatalist) {
+            colegiosDatalist.innerHTML = colegiosCache.map(function(c) {
+                return `<option value="${escapeHtml(c.nombre)}"></option>`;
+            }).join('');
+        }
+
+        const buscarBtn = document.getElementById('profesorBuscarBtn');
+        const codigoInput = document.getElementById('profesorCodigoInput');
+        if (buscarBtn && !buscarBtn._wired) {
+            buscarBtn._wired = true;
+            buscarBtn.addEventListener('click', async function() {
+                const codigo = codigoInput ? codigoInput.value.trim() : '';
+                if (!codigo) {
+                    limpiarResultadoAlumno('Escribe el código del alumno antes de buscar.');
+                    return;
+                }
+                buscarBtn.disabled = true;
+                const msgEl = document.getElementById('profesorBuscarMensaje');
+                if (msgEl) msgEl.textContent = 'Buscando...';
+                try {
+                    const encontrado = await buscarAlumnoPorCodigo(codigo);
+                    if (!encontrado) {
+                        limpiarResultadoAlumno('No se encontró ningún alumno con ese código. Revísalo con el estudiante e intenta de nuevo.');
+                        return;
+                    }
+                    if (msgEl) msgEl.textContent = '';
+                    mostrarResultadoAlumno(encontrado.uid, encontrado.data);
+                } catch (err) {
+                    console.error('Error buscando alumno por código:', err);
+                    limpiarResultadoAlumno('No se pudo buscar: ' + (err.code || err.message));
+                } finally {
+                    buscarBtn.disabled = false;
                 }
             });
         }
 
-        actualizarNotaGrado();
+        const guardarColegioGradoBtn = document.getElementById('profesorGuardarColegioGradoBtn');
+        if (guardarColegioGradoBtn && !guardarColegioGradoBtn._wired) {
+            guardarColegioGradoBtn._wired = true;
+            guardarColegioGradoBtn.addEventListener('click', async function() {
+                if (!profesorTargetUid) return;
+                const colegioInput = document.getElementById('profesorColegioInput');
+                const gradoInput = document.getElementById('profesorGradoInput');
+                const colegioTexto = colegioInput ? colegioInput.value.trim() : '';
+                const gradoTexto = gradoInput ? gradoInput.value.trim() : '';
+                if (!colegioTexto && !gradoTexto) {
+                    alert('Escribe al menos el colegio o el grado.');
+                    return;
+                }
+                guardarColegioGradoBtn.disabled = true;
+                try {
+                    if (colegioTexto) {
+                        const normColegio = normalizarTextoComparacion(colegioTexto);
+                        let colegioExistente = colegiosCache.find(function(c) { return normalizarTextoComparacion(c.nombre) === normColegio; });
+                        if (!colegioExistente) {
+                            const idNuevo = slugColegio(colegioTexto);
+                            await setDoc(doc(db, 'colegios', idNuevo), { nombre: colegioTexto, grados: [] }, { merge: true });
+                            colegioExistente = { id: idNuevo, nombre: colegioTexto, grados: [] };
+                            colegiosCache.push(colegioExistente);
+                        }
+                        if (gradoTexto) {
+                            const normGrado = normalizarTextoComparacion(gradoTexto);
+                            if (!colegioExistente.grados.find(function(g) { return normalizarTextoComparacion(g) === normGrado; })) {
+                                await setDoc(doc(db, 'colegios', colegioExistente.id), { grados: arrayUnion(gradoTexto) }, { merge: true });
+                                colegioExistente.grados.push(gradoTexto);
+                            }
+                        }
+                        await guardarColegioComoStaff(profesorTargetUid, colegioTexto);
+                    }
+                    if (gradoTexto) await guardarGradoComoStaff(profesorTargetUid, gradoTexto);
+                    alert('Colegio/grado del alumno actualizados.');
+                } catch (err) {
+                    console.error('Error guardando colegio/grado (staff):', err);
+                    alert('No se pudo guardar: ' + (err.code || err.message));
+                } finally {
+                    guardarColegioGradoBtn.disabled = false;
+                }
+            });
+        }
+
+        const agregarClaseBtn = document.getElementById('profesorAgregarClaseBtn');
+        if (agregarClaseBtn && !agregarClaseBtn._wired) {
+            agregarClaseBtn._wired = true;
+            agregarClaseBtn.addEventListener('click', async function() {
+                if (!profesorTargetUid) return;
+                const nombre = (document.getElementById('profesorMateriaInput') || {}).value;
+                const dia = (document.getElementById('profesorDiaInput') || {}).value;
+                const horaInicio = (document.getElementById('profesorHoraInicioInput') || {}).value;
+                const horaFin = (document.getElementById('profesorHoraFinInput') || {}).value;
+                const nombreTexto = nombre ? nombre.trim() : '';
+                if (!nombreTexto) { alert('Escribe el nombre de la materia.'); return; }
+                if (!horaInicio || !horaFin) { alert('Selecciona la hora de inicio y fin.'); return; }
+                if (horaInicio >= horaFin) { alert('La hora de inicio debe ser menor que la hora de finalización.'); return; }
+
+                agregarClaseBtn.disabled = true;
+                try {
+                    await agregarClaseComoStaff(profesorTargetUid, { nombre: nombreTexto, dia: dia, horaInicio: horaInicio, horaFin: horaFin });
+                    document.getElementById('profesorMateriaInput').value = '';
+                } catch (err) {
+                    console.error('Error agregando clase (staff):', err);
+                    alert('No se pudo agregar la clase: ' + (err.code || err.message));
+                } finally {
+                    agregarClaseBtn.disabled = false;
+                }
+            });
+        }
     }
 
     // --- Integración con Spotify ---
@@ -3959,11 +4257,72 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     let assistantChat = null;
     let assistantChatForId = null;
 
+    // IMPORTANTE: 'gemini-3.6-flash' es un modelo de "disponibilidad a
+    // corto plazo" (según la documentación de Firebase AI Logic), lo que
+    // significa que Google puede reducirle cuota o retirarlo con poco
+    // aviso una vez sale un modelo más nuevo -- eso puede verse desde
+    // acá como fallos intermitentes ("a veces funciona, a veces no").
+    // 'gemini-3.7-flash' es, al momento de este cambio, la versión
+    // estable más reciente y no tiene esa restricción.
+    const MODELO_IA_ACTUAL = 'gemini-3.7-flash';
+
     function crearModeloIA() {
         return getGenerativeModel(ai, {
-            model: 'gemini-3.6-flash',
+            model: MODELO_IA_ACTUAL,
             systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION
         });
+    }
+
+    // Pequeña espera entre reintentos (usada por enviarMensajeIAConReintento).
+    function esperarMs(ms) {
+        return new Promise(function(resolve) { setTimeout(resolve, ms); });
+    }
+
+    // Los errores de la API de Gemini a veces son *transitorios*: el
+    // modelo está saturado (429 "Resource exhausted"), hay un error
+    // temporal del servidor (503), o fue un simple corte de red. En
+    // esos casos, reintentar 1-2 veces con una pequeña espera resuelve
+    // la mayoría de los casos sin que el usuario tenga que volver a
+    // escribir el mensaje. Errores que NO son transitorios (bloqueo por
+    // seguridad, API key inválida, etc.) se lanzan de inmediato sin
+    // reintentar, porque reintentar no los va a arreglar.
+    async function enviarMensajeIAConReintento(chat, mensaje, maxIntentos) {
+        maxIntentos = maxIntentos || 3;
+        let ultimoError = null;
+        for (let intento = 1; intento <= maxIntentos; intento++) {
+            try {
+                return await chat.sendMessage(mensaje);
+            } catch (err) {
+                ultimoError = err;
+                const codigo = String((err && (err.code || err.status)) || '');
+                const mensajeErr = String((err && err.message) || '');
+                const esTransitorio = /429|503|500|unavailable|resource-exhausted|internal|network|fetch|timeout/i.test(codigo + ' ' + mensajeErr);
+                if (!esTransitorio || intento === maxIntentos) throw err;
+                await esperarMs(600 * intento); // espera creciente: 600ms, 1200ms...
+            }
+        }
+        throw ultimoError;
+    }
+
+    // Traduce el error crudo de la API a un mensaje entendible para el
+    // usuario, en vez de mostrarle un código técnico sin contexto.
+    function mensajeErrorAmigableIA(err) {
+        const codigo = String((err && (err.code || err.status)) || '');
+        const texto = String((err && err.message) || err || '');
+        const combinado = (codigo + ' ' + texto).toLowerCase();
+        if (/429|resource-exhausted|quota/.test(combinado)) {
+            return 'El asistente está muy solicitado en este momento (se llegó al límite de uso del proyecto). Espera un minuto y vuelve a intentar.';
+        }
+        if (/safety|blocked|prohibited/.test(combinado)) {
+            return 'No pude responder a ese mensaje porque el sistema de seguridad de la IA lo bloqueó. Intenta reformularlo.';
+        }
+        if (/network|fetch|failed to fetch|offline/.test(combinado)) {
+            return 'Parece que hubo un problema de conexión. Revisa tu internet e intenta de nuevo.';
+        }
+        if (/app-?check|permission-denied|unauthenticated/.test(combinado)) {
+            return 'No se pudo verificar la sesión/App Check para hablar con la IA. Recarga la página e intenta de nuevo.';
+        }
+        return 'Tuve un problema para responder (' + (codigo || texto || 'error desconocido') + '). Este intento no cuenta contra tu límite diario, puedes intentarlo de nuevo.';
     }
 
     function getAssistantChat(historyMsgs) {
@@ -4190,8 +4549,14 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             const chat = getAssistantChat();
             const contextoHorario = construirContextoHorarioIA();
             const contextoPerfil = construirContextoPerfilIA();
-            const result = await chat.sendMessage(contextoPerfil + '\n\n' + contextoHorario + '\n\nMensaje del usuario: ' + text);
+            const result = await enviarMensajeIAConReintento(chat, contextoPerfil + '\n\n' + contextoHorario + '\n\nMensaje del usuario: ' + text);
+            if (!result || !result.response || typeof result.response.text !== 'function') {
+                throw new Error('La IA no devolvió una respuesta válida (posiblemente bloqueada por el filtro de seguridad).');
+            }
             let responseText = result.response.text();
+            if (!responseText || !responseText.trim()) {
+                throw new Error('La IA devolvió una respuesta vacía. Intenta reformular tu mensaje.');
+            }
             const typing = document.getElementById('assistantTyping');
             if (typing) typing.remove();
 
@@ -4216,7 +4581,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             console.error('Error del asistente:', err);
             const typing = document.getElementById('assistantTyping');
             if (typing) typing.remove();
-            appendAssistantMessage('assistant', 'Lo siento, tuve un problema para responder: ' + (err.code || err.message || err) + '. Este intento no cuenta contra tu límite diario, puedes intentarlo de nuevo.');
+            appendAssistantMessage('assistant', mensajeErrorAmigableIA(err));
         } finally {
             actualizarBloqueoChatIA();
         }
@@ -5386,6 +5751,8 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         initCambioNombreUsuario();
         initIdUnico();
         initGradoColegio();
+        buildBadgesModal();
+        initPanelProfesores();
         initSpotify();
         renderActivityTimeline();
 
