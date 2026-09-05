@@ -1591,6 +1591,26 @@ body {
     margin-bottom: 0.8rem;
 }
 
+.img-picker-link-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.img-picker-link-input {
+    flex: 1;
+    padding: 0.55rem 0.8rem;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    font-size: 0.85rem;
+    background: var(--bg-secondary, #fff);
+    color: var(--text-primary);
+}
+
+.img-picker-link-row .btn {
+    flex-shrink: 0;
+}
+
 .img-picker-color {
     aspect-ratio: 1;
     border-radius: 10px;

@@ -3476,7 +3476,13 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, construirBadgesHtmlConLimi
         if (avatar && avatar.tipo === 'imagen' && avatar.valor) {
             const posX = avatar.posX != null ? avatar.posX : 50;
             const posY = avatar.posY != null ? avatar.posY : 50;
-            return `<div class="${claseBase}${tierClass}"><img src="${PROFILE_BG_PATH}${avatar.valor}.webp" alt="" style="object-position:${posX}% ${posY}%;" /></div>`;
+            // Nota: acá se pinta directo con la URL ya cacheada en el banco
+            // (o el enlace propio) sin congelar GIFs de cuentas no-Admin --
+            // es un avatar miniatura de 1-2cm en una lista de chats, así que
+            // se deja así por simplicidad. El congelado real para no-Admin
+            // se aplica en el avatar grande del perfil (aplicarAvatarPerfilView).
+            const url = resolverUrlImagenPerfil('avatar', avatar.valor) || '../recourses/images/S/notfound.webp';
+            return `<div class="${claseBase}${tierClass}"><img src="${url}" alt="" style="object-position:${posX}% ${posY}%;" /></div>`;
         }
         return `<div class="${claseBase}${tierClass}">${inicial}</div>`;
     }
@@ -3988,8 +3994,9 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, construirBadgesHtmlConLimi
         renderFriendsList();
         actualizarStats();
         aplicarAccentPerfilView(apariencia.acento);
-        aplicarBannerPerfilView(perfilImagenes.banner);
-        aplicarAvatarPerfilView(perfilImagenes.avatar);
+        const esAdminPropio = !!(currentUserData && esCorreoDeveloper(currentUserData.email));
+        aplicarBannerPerfilView(perfilImagenes.banner, esAdminPropio);
+        aplicarAvatarPerfilView(perfilImagenes.avatar, null, esAdminPropio);
         actualizarBadgeClaseActual();
         escucharSpotifyNowPlayingDeUid(currentUser ? currentUser.uid : null);
 
@@ -4090,8 +4097,9 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, construirBadgesHtmlConLimi
             if (emojiEl) emojiEl.textContent = perfil.emoji || EMOJI_SIN_REACCION;
             aplicarAnimEntradaPerfilPorEmoji(perfil.emoji || EMOJI_SIN_REACCION);
             aplicarAccentPerfilView(perfil.acento);
-            aplicarBannerPerfilView(perfil.banner);
-            aplicarAvatarPerfilView(perfil.avatar);
+            const esAdminDueno = esCorreoDeveloper(cuentaData.email);
+            aplicarBannerPerfilView(perfil.banner, esAdminDueno);
+            aplicarAvatarPerfilView(perfil.avatar, null, esAdminDueno);
 
             const postsArr = [];
             if (postsSnap.exists()) postsSnap.forEach(function(c) { postsArr.push(c.val()); });
@@ -4945,25 +4953,82 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         }
     }
 
-    // Carpeta con las imágenes que se pueden elegir tanto para el banner
-    // como para la foto de perfil (mismo set de imágenes para ambos, como
-    // se pidió). Para agregar una nueva: sube el archivo como
-    // recourses/images/backgrounds/background_N.webp y añade su miniatura
-    // en construirGridSelectorImagenes() más abajo. No hace falta tocar
-    // nada más del JS.
-    const PROFILE_BG_PATH = '../recourses/images/backgrounds/';
-    const PROFILE_BG_COUNT = 10; // background_1.webp ... background_10.webp
+    // ===== Bancos de imágenes para banner y foto de perfil =====
+    // Banner y avatar ahora tienen CADA UNO su propio set de imágenes (antes
+    // compartían uno solo). Además, en vez de subir los .webp/.gif reales,
+    // cada imagen es un archivo .txt que solo contiene el ENLACE (https://...)
+    // de la imagen real, alojada donde sea (Pinterest, wallpaper sites, CDN,
+    // etc.). Así el repo no carga con los binarios pesados. Para agregar una
+    // imagen nueva: sube un .txt con el link adentro (sin nada más, ni
+    // comillas) y sube en 1 los *_COUNT correspondientes.
+    const BANNER_IMG_PATH = '../recourses/images/backgrounds/';
+    const BANNER_IMG_COUNT = 16;       // background_1.txt ... background_16.txt
 
-    // Fondos animados exclusivos para cuentas Admin/Developer. Viven en
-    // el mismo folder que los demás fondos pero son .gif (no .webp), así
-    // que su "valor" sigue un patrón especial (admin_1, admin_2, ...,
-    // admin_10) para poder resolver la extensión correcta al armar la
-    // URL. Al ser un <div> con background-image, el navegador anima el
-    // GIF solo -- no hace falta JS extra para que "se mueva". Para
-    // agregar/quitar cuántos GIFs de admin hay, solo cambia este número
-    // y sube/baja los archivos admin_1.gif ... admin_N.gif.
-    const ADMIN_BG_COUNT = 10;
+    const AVATAR_IMG_PATH = '../recourses/images/profile/';
+    const AVATAR_IMG_COUNT = 10;       // profile_1.txt ... profile_10.txt
+
+    // Fondos/avatares ANIMADOS (GIF) exclusivos para cuentas Admin/Developer.
+    // Viven en el mismo folder que los demás (backgrounds/ o profile/ según
+    // el caso) pero su "valor" sigue el patrón especial admin_1, admin_2...
+    // para poder detectarlos. También son archivos .txt con el link del GIF
+    // adentro. Cada contexto (banner/avatar) tiene su propia cantidad de
+    // GIFs de admin porque son sets de imágenes distintos.
+    const BANNER_ADMIN_GIF_COUNT = 3;  // backgrounds/admin_1.txt ... admin_3.txt
+    const AVATAR_ADMIN_GIF_COUNT = 8;  // profile/admin_1.txt ... admin_8.txt
     const ADMIN_BG_PATTERN = /^admin_\d+$/;
+
+    // Detecta si un "valor" guardado es en realidad un enlace pegado a mano
+    // por la persona (ver el input "Usar un enlace propio" del selector) en
+    // vez de uno de los presets de arriba.
+    function esEnlaceCustomImagen(valor) {
+        return typeof valor === 'string' && /^https?:\/\//i.test(valor);
+    }
+
+    function esUrlGif(url) {
+        return typeof url === 'string' && /\.gif(\?|#|$)/i.test(url);
+    }
+
+    // Banco en memoria con las URLs ya resueltas: bancoImagenesPerfil.banner /
+    // .avatar, cada uno un objeto { 'background_1': 'https://...', ... }.
+    // Se llena UNA sola vez descargando todos los .txt (son livianos) y
+    // desde ahí resolverUrlImagenPerfil() solo lee de memoria -- así el resto
+    // del código (que antes armaba la URL de forma síncrona) no tiene que
+    // volverse async por completo.
+    const bancoImagenesPerfil = { banner: {}, avatar: {} };
+    let precargaBancoImagenesPromise = null;
+
+    async function cargarLinkDeTxt(ruta) {
+        try {
+            const resp = await fetch(ruta);
+            if (!resp.ok) return null;
+            const texto = (await resp.text()).trim();
+            return texto || null;
+        } catch (err) {
+            console.error('No se pudo cargar el enlace de ' + ruta, err);
+            return null;
+        }
+    }
+
+    function precargarBancoImagenesPerfil() {
+        if (precargaBancoImagenesPromise) return precargaBancoImagenesPromise;
+        const tareas = [];
+        function programar(tipo, carpeta, valor) {
+            tareas.push(cargarLinkDeTxt(carpeta + valor + '.txt').then(function(url) {
+                bancoImagenesPerfil[tipo][valor] = url;
+            }));
+        }
+        for (let i = 1; i <= BANNER_IMG_COUNT; i++) programar('banner', BANNER_IMG_PATH, 'background_' + i);
+        for (let i = 1; i <= BANNER_ADMIN_GIF_COUNT; i++) programar('banner', BANNER_IMG_PATH, 'admin_' + i);
+        for (let i = 1; i <= AVATAR_IMG_COUNT; i++) programar('avatar', AVATAR_IMG_PATH, 'profile_' + i);
+        for (let i = 1; i <= AVATAR_ADMIN_GIF_COUNT; i++) programar('avatar', AVATAR_IMG_PATH, 'admin_' + i);
+        precargaBancoImagenesPromise = Promise.all(tareas);
+        return precargaBancoImagenesPromise;
+    }
+    // Arranca la descarga apenas carga el script (no hace falta esperar al
+    // login): son puros archivos de texto chiquitos, así que para cuando se
+    // necesiten (perfil propio, selector, avatares mini de chat) ya deberían
+    // estar listos casi siempre.
+    precargarBancoImagenesPerfil();
 
     // Los GIFs de admin, si se ponen directo como background-image, el
     // navegador los reproduce todos a la vez apenas se abre el selector
@@ -5018,14 +5083,27 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         });
     }
 
-    // Resuelve la URL de un "valor" de fondo/avatar guardado, sin importar
-    // si es uno de los background_N.webp normales o uno de los GIF
-    // especiales de admins. Centralizado acá para no repetir el if en
-    // cada sitio que pinta un fondo (picker, preview, banner real,
-    // avatar miniatura...).
-    function resolverUrlImagenPerfil(valor) {
-        if (ADMIN_BG_PATTERN.test(valor)) return PROFILE_BG_PATH + valor + '.gif';
-        return PROFILE_BG_PATH + valor + '.webp';
+    // Resuelve la URL real de un "valor" de fondo/avatar guardado: puede ser
+    // uno de los presets (background_N / profile_N / admin_N, ya cacheados
+    // en bancoImagenesPerfil) o un enlace que la propia persona pegó a mano.
+    // `tipo` es 'banner' o 'avatar' porque cada uno tiene su propio banco.
+    function resolverUrlImagenPerfil(tipo, valor) {
+        if (!valor) return '';
+        if (esEnlaceCustomImagen(valor)) return valor;
+        const banco = bancoImagenesPerfil[tipo] || {};
+        return banco[valor] || '';
+    }
+
+    // Si la URL es un GIF y la cuenta dueña NO es Admin/Developer, devuelve
+    // el primer fotograma congelado en vez del GIF animado (reutiliza el
+    // mismo truco de canvas que ya se usaba solo para las miniaturas del
+    // selector). Así, aunque cualquier persona pueda pegar un enlace de GIF
+    // como su fondo/avatar, la animación de verdad SOLO se reproduce si es
+    // una cuenta Admin/Developer -- a los demás se les congela sola.
+    async function urlFinalRespetandoAnimacion(url, esAdminDueno) {
+        if (!url || esAdminDueno || !esUrlGif(url)) return url;
+        const congelado = await obtenerFotogramaEstaticoGif(url);
+        return congelado || url;
     }
 
     // Paleta de colores sólidos para quien prefiera un banner sin imagen.
@@ -5042,7 +5120,12 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         view.style.setProperty('--accent-user', acento || '#1a2332');
     }
 
-    function aplicarBannerPerfilView(banner) {
+    // `esAdminDueno` es sobre la cuenta DUEÑA del perfil que se está
+    // mostrando (no sobre quien está mirando): si es tu propio perfil, tu
+    // propia condición de Admin/Developer; si estás viendo el de alguien
+    // más, la de esa otra persona. De eso depende si un GIF se reproduce
+    // animado o se congela (ver urlFinalRespetandoAnimacion arriba).
+    async function aplicarBannerPerfilView(banner, esAdminDueno) {
         const bannerEl = document.getElementById('profileBanner');
         if (!bannerEl) return;
         banner = banner || { tipo: 'default' };
@@ -5051,26 +5134,32 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         bannerEl.style.backgroundColor = '';
         bannerEl.style.backgroundPosition = '';
         if (banner.tipo === 'imagen' && banner.valor) {
+            await precargarBancoImagenesPerfil();
+            const urlBase = resolverUrlImagenPerfil('banner', banner.valor);
             bannerEl.classList.add('banner-imagen');
             // Marca aparte para el GIF de admin: le da un borde/glow distinto
             // (ver .profile-banner.banner-imagen-admin en dashboard.css) para
             // que se note que ese perfil trae el fondo animado exclusivo.
-            bannerEl.classList.toggle('banner-imagen-admin', ADMIN_BG_PATTERN.test(banner.valor));
-            bannerEl.style.backgroundImage = `url('${resolverUrlImagenPerfil(banner.valor)}')`;
+            bannerEl.classList.toggle('banner-imagen-admin', !!esAdminDueno && esUrlGif(urlBase));
             bannerEl.style.backgroundPosition = `${banner.posX != null ? banner.posX : 50}% ${banner.posY != null ? banner.posY : 50}%`;
+            const urlFinal = await urlFinalRespetandoAnimacion(urlBase, esAdminDueno);
+            bannerEl.style.backgroundImage = urlFinal ? `url('${urlFinal}')` : '';
         } else if (banner.tipo === 'color' && banner.valor) {
             bannerEl.classList.add('banner-color');
             bannerEl.style.backgroundColor = banner.valor;
         }
     }
 
-    function aplicarAvatarPerfilView(avatar, imgEl) {
+    async function aplicarAvatarPerfilView(avatar, imgEl, esAdminDueno) {
         const img = imgEl || document.getElementById('profileAvatar');
         if (!img) return;
         avatar = avatar || { tipo: 'default' };
         if (avatar.tipo === 'imagen' && avatar.valor) {
-            img.src = resolverUrlImagenPerfil(avatar.valor);
+            await precargarBancoImagenesPerfil();
+            const urlBase = resolverUrlImagenPerfil('avatar', avatar.valor);
             img.style.objectPosition = `${avatar.posX != null ? avatar.posX : 50}% ${avatar.posY != null ? avatar.posY : 50}%`;
+            const urlFinal = await urlFinalRespetandoAnimacion(urlBase, esAdminDueno);
+            img.src = urlFinal || '../recourses/images/S/notfound.webp';
         } else {
             img.src = '../recourses/images/S/notfound.webp';
             img.style.objectPosition = '';
@@ -5109,9 +5198,10 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         } catch (err) {
             console.error('Error cargando imágenes de perfil:', err);
         }
-        aplicarBannerPerfilView(perfilImagenes.banner);
-        aplicarAvatarPerfilView(perfilImagenes.avatar);
-        aplicarAvatarPerfilView(perfilImagenes.avatar, document.getElementById('userAvatar'));
+        const esAdminPropio = !!(currentUserData && esCorreoDeveloper(currentUserData.email));
+        aplicarBannerPerfilView(perfilImagenes.banner, esAdminPropio);
+        aplicarAvatarPerfilView(perfilImagenes.avatar, null, esAdminPropio);
+        aplicarAvatarPerfilView(perfilImagenes.avatar, document.getElementById('userAvatar'), esAdminPropio);
     }
 
     function initApariencia() {
@@ -5135,22 +5225,24 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     }
 
     // ===== Selector de imagen (banner / foto de perfil) =====
-    // Comparten el mismo set de imágenes preestablecidas. El banner además
-    // admite un color sólido liso para quien no quiera usar imágenes.
+    // Banner y avatar tienen cada uno su propio set de imágenes (ver bancos
+    // arriba). El banner además admite un color sólido liso para quien no
+    // quiera usar imágenes.
     let imgPickerState = null;
 
-    function construirGridImagenesHtml(seleccionActual, esAdmin) {
+    function construirGridImagenesHtml(tipo, seleccionActual, esAdmin) {
         let html = '';
-        // Los 10 GIFs de admin van primero para que la opción "especial"
-        // no se pierda entre los demás fondos; solo se pintan si a la
-        // cuenta le toca la insignia Admin/Developer (ver
-        // esCorreoDeveloper en badges.js), así que un usuario normal
-        // nunca los ve ni los puede elegir aunque adivine el valor a
-        // mano. Mismo tamaño de casilla que los fondos normales (antes
-        // el único GIF de admin ocupaba 2 casillas y se veía enorme al
-        // lado de los demás).
+        const conteoNormal = tipo === 'avatar' ? AVATAR_IMG_COUNT : BANNER_IMG_COUNT;
+        const conteoAdminGif = tipo === 'avatar' ? AVATAR_ADMIN_GIF_COUNT : BANNER_ADMIN_GIF_COUNT;
+        const prefijoNormal = tipo === 'avatar' ? 'profile_' : 'background_';
+        // Los GIFs de admin van primero para que la opción "especial" no se
+        // pierda entre los demás; solo se pintan si a la cuenta le toca la
+        // insignia Admin/Developer (ver esCorreoDeveloper en badges.js), así
+        // que un usuario normal nunca los ve ni los puede elegir aunque
+        // adivine el valor a mano. Mismo tamaño de casilla que los fondos
+        // normales.
         if (esAdmin) {
-            for (let i = 1; i <= ADMIN_BG_COUNT; i++) {
+            for (let i = 1; i <= conteoAdminGif; i++) {
                 const valor = 'admin_' + i;
                 const activaAdmin = seleccionActual === valor;
                 // A propósito NO se pone el GIF animado como background-image
@@ -5158,13 +5250,13 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                 // congelarGifsDelGridSelector() le ponga su fotograma
                 // congelado. Así, al abrir el selector, ningún GIF se pone
                 // a reproducir de una -- solo se ve una miniatura fija.
-                html += `<button type="button" class="img-picker-swatch img-picker-swatch-admin${activaAdmin ? ' active' : ''}" data-valor="${valor}" data-gif-url="${resolverUrlImagenPerfil(valor)}" aria-label="Fondo animado Admin ${i}" title="Exclusivo Admin #${i}"></button>`;
+                html += `<button type="button" class="img-picker-swatch img-picker-swatch-admin${activaAdmin ? ' active' : ''}" data-valor="${valor}" data-gif-url="${resolverUrlImagenPerfil(tipo, valor)}" aria-label="Imagen animada Admin ${i}" title="Exclusivo Admin #${i}"></button>`;
             }
         }
-        for (let i = 1; i <= PROFILE_BG_COUNT; i++) {
-            const valor = 'background_' + i;
+        for (let i = 1; i <= conteoNormal; i++) {
+            const valor = prefijoNormal + i;
             const activa = seleccionActual === valor;
-            html += `<button type="button" class="img-picker-swatch${activa ? ' active' : ''}" data-valor="${valor}" style="background-image:url('${resolverUrlImagenPerfil(valor)}');" aria-label="Imagen ${i}"></button>`;
+            html += `<button type="button" class="img-picker-swatch${activa ? ' active' : ''}" data-valor="${valor}" style="background-image:url('${resolverUrlImagenPerfil(tipo, valor)}');" aria-label="Imagen ${i}"></button>`;
         }
         return html;
     }
@@ -5200,7 +5292,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         if (!preview || !imgPickerState) return;
         preview.className = 'img-picker-preview' + (imgPickerState.tipo === 'avatar' ? ' img-picker-preview-avatar' : '');
         if (imgPickerState.tipoSeleccion === 'imagen' && imgPickerState.valor) {
-            preview.style.backgroundImage = `url('${resolverUrlImagenPerfil(imgPickerState.valor)}')`;
+            preview.style.backgroundImage = `url('${resolverUrlImagenPerfil(imgPickerState.tipo, imgPickerState.valor)}')`;
             preview.style.backgroundColor = '';
             preview.style.backgroundPosition = `${imgPickerState.posX}% ${imgPickerState.posY}%`;
         } else if (imgPickerState.tipoSeleccion === 'color' && imgPickerState.valor) {
@@ -5242,6 +5334,12 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
                             <p class="img-picker-label">O un color sólido (sin imagen)</p>
                             <div class="img-picker-colors" id="imgPickerColors"></div>
                         </div>
+                        <p class="img-picker-label">O pega tu propio enlace de imagen</p>
+                        <div class="img-picker-link-row">
+                            <input type="url" id="imgPickerLinkInput" class="img-picker-link-input" placeholder="https://..." />
+                            <button class="btn btn-secondary btn-sm" id="imgPickerLinkBtn" type="button">Usar enlace</button>
+                        </div>
+                        <p class="img-picker-hint" id="imgPickerLinkHint">Si el enlace es un GIF, solo se ve animado en cuentas Admin/Developer; en las demás se muestra fijo.</p>
                         <button class="btn btn-secondary btn-sm" id="imgPickerDefaultBtn" type="button">Quitar y usar el estilo por defecto</button>
                     </div>
                     <div class="modal-footer">
@@ -5273,9 +5371,21 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             imgPickerState.posY = Number(this.value);
             actualizarPreviewImgPicker();
         });
+        document.getElementById('imgPickerLinkBtn').addEventListener('click', function() {
+            const input = document.getElementById('imgPickerLinkInput');
+            const url = (input.value || '').trim();
+            if (!esEnlaceCustomImagen(url)) {
+                alert('Pega un enlace válido que empiece con http:// o https://');
+                return;
+            }
+            imgPickerState.tipoSeleccion = 'imagen';
+            imgPickerState.valor = url;
+            document.querySelectorAll('.img-picker-swatch, .img-picker-color').forEach(function(b) { b.classList.remove('active'); });
+            actualizarPreviewImgPicker();
+        });
     }
 
-    function abrirSelectorImagen(tipo) {
+    async function abrirSelectorImagen(tipo) {
         buildImagePickerModal();
         const actual = tipo === 'avatar' ? perfilImagenes.avatar : perfilImagenes.banner;
         imgPickerState = {
@@ -5290,6 +5400,16 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         document.getElementById('imgPickerPosX').value = imgPickerState.posX;
         document.getElementById('imgPickerPosY').value = imgPickerState.posY;
 
+        // Precarga (o reutiliza si ya está lista) el banco de imágenes antes
+        // de armar el grid, para no mostrar casillas vacías.
+        await precargarBancoImagenesPerfil();
+
+        // Campo de enlace propio: precargado con el valor actual SOLO si es
+        // un enlace pegado a mano (no uno de los presets), para poder
+        // editarlo directo.
+        const linkInput = document.getElementById('imgPickerLinkInput');
+        if (linkInput) linkInput.value = esEnlaceCustomImagen(imgPickerState.valor) ? imgPickerState.valor : '';
+
         if (tipo === 'banner') {
             sincronizarProporcionPreviewBanner();
         } else {
@@ -5297,13 +5417,15 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             if (preview) { preview.style.aspectRatio = ''; preview.style.height = ''; }
         }
 
-        // El GIF animado solo se ofrece para el banner (es "un fondo", no
-        // tiene sentido como foto de perfil circular) y solo si la cuenta
-        // tiene la insignia Admin/Developer.
-        const esAdmin = tipo === 'banner' && !!(currentUserData && esCorreoDeveloper(currentUserData.email));
+        // Los GIFs de la galería (preestablecidos) SOLO se ofrecen a cuentas
+        // Admin/Developer, tanto para banner como para avatar. Cualquiera
+        // puede además pegar su propio enlace (ver input debajo del grid),
+        // pero si ese enlace es un GIF y la cuenta no es Admin, se congela
+        // solo al mostrarse de verdad (ver urlFinalRespetandoAnimacion).
+        const esAdmin = !!(currentUserData && esCorreoDeveloper(currentUserData.email));
 
         const grid = document.getElementById('imgPickerGrid');
-        grid.innerHTML = construirGridImagenesHtml(imgPickerState.tipoSeleccion === 'imagen' ? imgPickerState.valor : null, esAdmin);
+        grid.innerHTML = construirGridImagenesHtml(tipo, imgPickerState.tipoSeleccion === 'imagen' ? imgPickerState.valor : null, esAdmin);
         if (esAdmin) congelarGifsDelGridSelector(grid);
         grid.querySelectorAll('.img-picker-swatch').forEach(function(btn) {
             btn.addEventListener('click', function() {
@@ -5361,11 +5483,12 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             await update(ref(rtdb, 'users/' + currentUser.uid + '/perfil'), { [tipo]: datos });
             perfilImagenes[tipo] = datos;
             if (tipo === 'banner') {
-                aplicarBannerPerfilView(datos);
+                aplicarBannerPerfilView(datos, !!(currentUserData && esCorreoDeveloper(currentUserData.email)));
                 agregarNotificacionSistema('Banner actualizado', 'Cambiaste el banner de tu perfil.', 'section-perfil');
             } else {
-                aplicarAvatarPerfilView(datos);
-                aplicarAvatarPerfilView(datos, document.getElementById('userAvatar'));
+                const esAdminPropio = !!(currentUserData && esCorreoDeveloper(currentUserData.email));
+                aplicarAvatarPerfilView(datos, null, esAdminPropio);
+                aplicarAvatarPerfilView(datos, document.getElementById('userAvatar'), esAdminPropio);
                 agregarNotificacionSistema('Foto de perfil actualizada', 'Cambiaste tu foto de perfil.', 'section-perfil');
             }
             cerrarSelectorImagen();
