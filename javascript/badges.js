@@ -10,7 +10,7 @@
 export const DEVELOPER_EMAILS = [
     'jhorkbecerra@gmail.com',
     'juancheton0930@gmail.com',
-    'juanfelipelopezramirez61@gamil.com'
+    'juanfelipelopezramirez61@gmail.com'
 ];
 
 // ----- Cuentas de profesor -----
@@ -37,7 +37,7 @@ export const TEACHER_EMAILS = [
 export const TEACHER_PREVIEW_EMAILS = [
     'jhorkbecerra@gmail.com',
     'juancheton0930@gmail.com',
-    'juanfelipelopezramirez61@gamil.com'
+    'juanfelipelopezramirez61@gmail.com'
 ];
 
 // ----- Insignia BETA -----
