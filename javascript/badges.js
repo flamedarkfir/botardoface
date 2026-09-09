@@ -8,7 +8,9 @@
 // Reciben la insignia "Admin" / "Developer" en su perfil. Añade más
 // correos aquí (en minúsculas) a medida que los vayas necesitando.
 export const DEVELOPER_EMAILS = [
-    'jhorkbecerra@gmail.com'
+    'jhorkbecerra@gmail.com',
+    'juancheton0930@gmail.com',
+    'juanfelipelopezramirez61@gamil.com'
 ];
 
 // ----- Cuentas de profesor -----
@@ -33,7 +35,9 @@ export const TEACHER_EMAILS = [
 // verdad, sus correos van en TEACHER_EMAILS (arriba) y esta lista se
 // puede dejar vacía o quitar.
 export const TEACHER_PREVIEW_EMAILS = [
-    'jhorkbecerra@gmail.com'
+    'jhorkbecerra@gmail.com',
+    'juancheton0930@gmail.com',
+    'juanfelipelopezramirez61@gamil.com'
 ];
 
 // ----- Insignia BETA -----
