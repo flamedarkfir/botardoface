@@ -1,0 +1,31 @@
+{
+  "rules": {
+    "rostros": {
+      ".read": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0",
+      ".write": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0"
+    },
+    "asistenciaDia": {
+      ".read": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0",
+      ".write": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0"
+    },
+    "asistencias": {
+      ".read": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0",
+      "$colegio": {
+        "$grado": {
+          "$botardoId": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0"
+          }
+        }
+      }
+    },
+    "reconocimientos": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0"
+    },
+    "asistencias_config": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.email_verified === true && ['jhorkbecerra@gmail.com','juancheton0930@gmail.com','juanfelipelopezramirez61@gmail.com'].indexOf(auth.token.email) >= 0"
+    }
+  }
+}

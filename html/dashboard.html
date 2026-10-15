@@ -38,6 +38,7 @@
                 <li><a href="#estadisticas" data-section="estadisticas"><i class="fas fa-chart-bar"></i><span>Estadísticas</span></a></li>
                 <li><a href="#configuracion" data-section="configuracion"><i class="fas fa-gear"></i><span>Configuración</span></a></li>
                 <li id="navItemProfesores" style="display:none;"><a href="#profesores" data-section="profesores"><i class="fas fa-user-tie"></i><span>Profesores</span></a></li>
+                <li id="navItemAsistencia" style="display:none;"><a href="#asistencia" data-section="asistencia"><i class="fas fa-video"></i><span>Cámara</span></a></li>
                 <li class="sidebar-separator"></li>
                 <li><a href="#proyectos" data-section="proyectos"><i class="fas fa-folder-open"></i><span>Proyectos</span></a></li>
             </ul>
@@ -107,7 +108,7 @@
 
         <section id="section-panel" class="dashboard-section active">
             <div class="stats-grid">
-                <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-user-check"></i></div><div class="stat-info"><span class="stat-value" id="totalReconocimientos">0</span><span class="stat-label">Reconocimientos</span></div></div>
+                <div class="stat-card"><div class="stat-icon" style="background:#e8f5e9;color:#2e7d32;"><i class="fas fa-user-check"></i></div><div class="stat-info"><span class="stat-value" id="totalReconocimientos">0</span><span class="stat-label">Reconocimientos (24 h)</span></div></div>
                 <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-users"></i></div><div class="stat-info"><span class="stat-value" id="totalUsuarios">0</span><span class="stat-label">Usuarios activos</span></div></div>
                 <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-clock"></i></div><div class="stat-info"><span class="stat-value" id="tiempoPromedio">0.0s</span><span class="stat-label">Tiempo promedio</span></div></div>
                 <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-percent"></i></div><div class="stat-info"><span class="stat-value" id="tasaPrecision">0.0%</span><span class="stat-label">Precisión</span></div></div>
@@ -323,6 +324,7 @@
                     <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#0d47a1;"><i class="fas fa-fire"></i></div><div class="stat-info"><span class="stat-value" id="salonRacha">0</span><span class="stat-label">Racha de días seguidos</span></div></div>
                     <div class="stat-card"><div class="stat-icon" style="background:#fff3e0;color:#e65100;"><i class="fas fa-calendar-week"></i></div><div class="stat-info"><span class="stat-value" id="salonEstaSemana">0</span><span class="stat-label">Asistencias esta semana</span></div></div>
                     <div class="stat-card"><div class="stat-icon" style="background:#fce4ec;color:#c62828;"><i class="fas fa-clock"></i></div><div class="stat-info"><span class="stat-value" id="salonUltimaAsistencia">--</span><span class="stat-label">Última asistencia</span></div></div>
+                    <div class="stat-card"><div class="stat-icon" style="background:#ffebee;color:#b71c1c;"><i class="fas fa-user-xmark"></i></div><div class="stat-info"><span class="stat-value" id="salonFaltas">0</span><span class="stat-label">Faltas</span></div></div>
                 </div>
 
                 <div class="panel-grid" style="margin-top:1.5rem;">
@@ -462,6 +464,77 @@
                                 </div>
                                 <button class="btn btn-secondary" id="profesorAgregarClaseBtn"><i class="fas fa-plus"></i> Agregar clase</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="section-asistencia" class="dashboard-section">
+            <div class="salon-container">
+                <h2><i class="fas fa-video"></i> Cámara de asistencia</h2>
+                <p class="salon-subtitle" id="asisVentana">Llegada 06:45 a 07:30 · después cuenta como tarde.</p>
+
+                <div class="panel-grid" style="margin-top:1rem;">
+                    <div class="panel-card full-width">
+                        <div class="panel-card-header"><h3><i class="fas fa-camera"></i> Cámara en vivo</h3></div>
+                        <div class="panel-card-body">
+                            <div class="asis-stage" id="asisStage">
+                                <img id="asisVid" alt="Cámara" crossorigin="anonymous">
+                                <canvas id="asisOverlay"></canvas>
+                                <div class="asis-idle" id="asisIdle"><i class="fas fa-video-slash"></i><span id="asisIdleText">Cámara apagada</span></div>
+                                <div class="asis-status"><span class="asis-dot wait" id="asisDot"></span><span id="asisEstado">Sin conectar</span></div>
+                                <div class="asis-toast" id="asisToast"></div>
+                            </div>
+                            <div class="asis-controles">
+                                <button class="btn btn-primary" id="asisAutoBtn"><i class="fas fa-play"></i> Iniciar</button>
+                                <button class="btn btn-secondary" id="asisBuscarBtn"><i class="fas fa-magnifying-glass"></i> Buscar cámara</button>
+                                <button class="btn btn-secondary" id="asisFullBtn"><i class="fas fa-expand"></i> Pantalla completa</button>
+                            </div>
+                            <p class="asis-aviso" id="asisHttpsAviso" style="display:none;"><i class="fas fa-triangle-exclamation"></i> Esta página está en HTTPS y la cámara usa HTTP: el navegador bloqueará el video. Abre la app desde una dirección local (http) o permite contenido inseguro para este sitio.</p>
+                        </div>
+                    </div>
+
+                    <div class="panel-card full-width">
+                        <div class="panel-card-header"><h3><i class="fas fa-list-check"></i> Lista de hoy</h3></div>
+                        <div class="panel-card-body">
+                            <div class="asis-resumen"><span class="asis-chip" style="--c:#1565c0;"><b id="asisReconocidos">0</b> Rostros reconocidos en 24 h</span></div>
+                            <div class="asis-resumen" id="asisResumen"></div>
+                            <div class="asis-progreso"><div class="asis-progreso-barra" id="asisProgresoBarra"></div></div>
+                            <p class="asis-progreso-texto" id="asisProgresoTexto"></p>
+                            <div id="asisLista"></div>
+                        </div>
+                    </div>
+
+                    <div class="panel-card">
+                        <div class="panel-card-header"><h3><i class="fas fa-user-plus"></i> Registrar rostro</h3></div>
+                        <div class="panel-card-body">
+                            <p class="asis-ayuda">Escribe el ID Botardo del estudiante, colócalo frente a la cámara y captura su rostro.</p>
+                            <div class="asis-fila-form">
+                                <input type="text" id="asisIdInput" placeholder="ID Botardo" autocomplete="off">
+                                <button class="btn btn-secondary" id="asisBuscarAlumnoBtn"><i class="fas fa-search"></i> Buscar</button>
+                            </div>
+                            <div class="asis-alumno" id="asisAlumnoCard" style="display:none;">
+                                <strong id="asisAlumnoNombre"></strong>
+                                <span id="asisAlumnoMeta"></span>
+                                <div class="asis-fila-form">
+                                    <button class="btn btn-primary" id="asisCapturarBtn"><i class="fas fa-camera"></i> Capturar rostro</button>
+                                    <button class="btn btn-secondary" id="asisEliminarRostroBtn" style="display:none;"><i class="fas fa-trash"></i> Eliminar rostro</button>
+                                </div>
+                            </div>
+                            <p class="asis-ayuda" id="asisCapturaMsg"></p>
+                        </div>
+                    </div>
+
+                    <div class="panel-card">
+                        <div class="panel-card-header"><h3><i class="fas fa-calendar-xmark"></i> Días sin clase</h3></div>
+                        <div class="panel-card-body">
+                            <p class="asis-ayuda">Festivos o cierres: ese día no se toma asistencia ni cuenta como falta. Sábados y domingos ya se excluyen.</p>
+                            <div class="asis-fila-form">
+                                <input type="date" id="asisDiaInput">
+                                <button class="btn btn-secondary" id="asisDiaAddBtn"><i class="fas fa-plus"></i> Agregar</button>
+                            </div>
+                            <div id="asisDiasLista"></div>
                         </div>
                     </div>
                 </div>

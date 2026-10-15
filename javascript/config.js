@@ -1,5 +1,7 @@
 import { auth, db, rtdb, ai, onAuthStateChanged, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, doc, getDoc, setDoc, collection, query, where, getDocs, arrayUnion, runTransaction, ref, set, get, update, remove, push, onValue, off, onDisconnect, getGenerativeModel } from './firebase-config.js';
 import { EMOJI_SIN_REACCION, EMOJIS_RULETA, indiceRarezaEmoji, tierVisualEmoji, girarRuletaEmoji, datosExclusividadPorTier, TIER_INFO } from './avatar-utils.js';
+import { initAsistenciaCamara, suscribirReconocimientos24h } from './asistencia-camara.js';
+import { calcularFaltas } from './asistencia-logic.js';
 import { obtenerBadgesDeUsuario, construirBadgesHtml, construirBadgesHtmlConLimite, esCorreoDeveloper, esCorreoProfesor, esCuentaStaff } from './badges.js';
 
 (function() {
@@ -289,7 +291,8 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, construirBadgesHtmlConLimi
             'section-proyectos': 'Proyectos',
             'section-estadisticas': 'Estadísticas',
             'section-configuracion': 'Configuración',
-            'section-profesores': 'Panel de profesores'
+            'section-profesores': 'Panel de profesores',
+            'section-asistencia': 'Cámara de asistencia'
         };
         if (pageTitle && titles[sectionId]) pageTitle.textContent = titles[sectionId];
 
@@ -753,6 +756,7 @@ import { obtenerBadgesDeUsuario, construirBadgesHtml, construirBadgesHtmlConLimi
             return;
         }
         if (navItem) navItem.style.display = '';
+        try { initAsistenciaCamara({ user: currentUser, userData: currentUserData }); } catch (e) { console.error('Cámara de asistencia:', e); }
 
         await cargarColegios();
         const colegiosDatalist = document.getElementById('gradosColegiosSugeridos');
@@ -4810,15 +4814,15 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         return racha;
     }
 
-    async function cargarAsistenciasSalon() {
-        const elTotales = document.getElementById('salonAsistenciasTotales');
-        const elRacha = document.getElementById('salonRacha');
-        const elSemana = document.getElementById('salonEstaSemana');
-        const elUltima = document.getElementById('salonUltimaAsistencia');
+    let salonClave = '';
+    let salonBajas = [];
+    let salonTimer = null;
+    let salonDatos = { registros: {}, desde: null, dias: [], cargado: false };
+
+    function cargarAsistenciasSalon() {
         const elColegio = document.getElementById('salonColegioTexto');
         const elGrado = document.getElementById('salonGradoTexto');
         const elEstado = document.getElementById('salonEstadoReconocedor');
-        const elHistorial = document.getElementById('salonHistorialLista');
 
         if (elColegio) elColegio.textContent = (currentUserData && currentUserData.colegio) || 'Sin definir';
         if (elGrado) elGrado.textContent = (currentUserData && currentUserData.grado) || 'Sin definir';
@@ -4828,53 +4832,102 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
             return;
         }
 
-        const colegioSlug = slugColegio(currentUserData.colegio);
-        const gradoSlug = slugColegio(currentUserData.grado);
-        const rutaAsistencias = ref(rtdb, `asistencias/${colegioSlug}/${gradoSlug}/${currentUserData.botardoId}`);
+        const id = currentUserData.botardoId;
+        const clave = slugColegio(currentUserData.colegio) + '/' + slugColegio(currentUserData.grado) + '/' + id;
 
-        try {
-            const snap = await get(rutaAsistencias);
-            if (!snap.exists()) {
-                if (elEstado) elEstado.textContent = 'Sin datos aún: el reconocedor facial todavía no te ha registrado';
-                return;
-            }
-            const datos = snap.val();
-            const fechas = Object.keys(datos).sort();
-            const totales = fechas.length;
+        if (clave !== salonClave) {
+            salonBajas.forEach(function(baja) { baja(); });
+            salonClave = clave;
+            salonDatos = { registros: {}, desde: null, dias: [], cargado: false };
+            salonBajas = [
+                onValue(ref(rtdb, 'asistencias/' + clave), function(snap) {
+                    salonDatos.registros = snap.val() || {};
+                    salonDatos.cargado = true;
+                    pintarAsistenciasSalon();
+                }, function(err) {
+                    console.error('Error cargando asistencias:', err);
+                    if (elEstado) elEstado.textContent = 'No se pudieron cargar las asistencias';
+                }),
+                onValue(ref(rtdb, 'asistencias_config/desde/' + id), function(snap) {
+                    salonDatos.desde = snap.exists() ? snap.val() : null;
+                    pintarAsistenciasSalon();
+                }, function() {}),
+                onValue(ref(rtdb, 'asistencias_config/diasSinClase'), function(snap) {
+                    salonDatos.dias = Object.keys(snap.val() || {});
+                    pintarAsistenciasSalon();
+                }, function() {})
+            ];
+        }
+        if (!salonTimer) salonTimer = setInterval(pintarAsistenciasSalon, 60000);
+        pintarAsistenciasSalon();
+    }
 
-            const hoy = new Date();
-            const inicioSemana = new Date(hoy);
-            inicioSemana.setDate(hoy.getDate() - hoy.getDay());
-            inicioSemana.setHours(0, 0, 0, 0);
-            const estaSemana = fechas.filter(function(f) { return new Date(f + 'T00:00:00') >= inicioSemana; }).length;
+    function pintarAsistenciasSalon() {
+        if (!salonDatos.cargado) return;
+        const elTotales = document.getElementById('salonAsistenciasTotales');
+        const elRacha = document.getElementById('salonRacha');
+        const elSemana = document.getElementById('salonEstaSemana');
+        const elUltima = document.getElementById('salonUltimaAsistencia');
+        const elFaltas = document.getElementById('salonFaltas');
+        const elEstado = document.getElementById('salonEstadoReconocedor');
+        const elHistorial = document.getElementById('salonHistorialLista');
 
-            const ultimaFecha = fechas[fechas.length - 1];
-            const racha = calcularRachaDiasHabiles(fechas);
+        const datos = salonDatos.registros;
+        const faltas = calcularFaltas({ registros: datos, desde: salonDatos.desde, diasSinClase: salonDatos.dias });
+        const fechas = Object.keys(datos).sort();
+        const asistidas = fechas.filter(function(f) {
+            const e = datos[f] && datos[f].estado;
+            return e !== 'justificada' && e !== 'falta';
+        });
 
-            if (elTotales) elTotales.textContent = totales;
-            if (elRacha) elRacha.textContent = racha;
-            if (elSemana) elSemana.textContent = estaSemana;
-            if (elUltima) elUltima.textContent = ultimaFecha ? formatearFechaCorta(ultimaFecha) : '--';
-            if (elEstado) elEstado.textContent = 'Conectado: recibiendo asistencias correctamente';
+        if (elFaltas) elFaltas.textContent = faltas.length;
 
-            if (elHistorial) {
-                const ultimasDiez = fechas.slice(-10).reverse();
-                elHistorial.innerHTML = ultimasDiez.map(function(f) {
-                    const registro = datos[f];
-                    return `
-                        <div class="activity-item">
-                            <span class="activity-dot" style="background:#2e7d32;"></span>
-                            <div class="activity-content">
-                                <p><strong>Asistencia registrada</strong> — ${escapeHtml(registro.estado || 'presente')}</p>
-                                <span class="activity-time">${escapeHtml(f)}${registro.hora ? ' · ' + escapeHtml(registro.hora) : ''}</span>
-                            </div>
+        if (!fechas.length && !faltas.length) {
+            if (elTotales) elTotales.textContent = '0';
+            if (elRacha) elRacha.textContent = '0';
+            if (elSemana) elSemana.textContent = '0';
+            if (elUltima) elUltima.textContent = '--';
+            if (elEstado) elEstado.textContent = 'Sin datos aún: el reconocedor facial todavía no te ha registrado';
+            return;
+        }
+
+        const hoy = new Date();
+        const inicioSemana = new Date(hoy);
+        inicioSemana.setDate(hoy.getDate() - hoy.getDay());
+        inicioSemana.setHours(0, 0, 0, 0);
+        const estaSemana = asistidas.filter(function(f) { return new Date(f + 'T00:00:00') >= inicioSemana; }).length;
+        const ultimaFecha = asistidas[asistidas.length - 1];
+
+        if (elTotales) elTotales.textContent = asistidas.length;
+        if (elRacha) elRacha.textContent = calcularRachaDiasHabiles(asistidas);
+        if (elSemana) elSemana.textContent = estaSemana;
+        if (elUltima) elUltima.textContent = ultimaFecha ? formatearFechaCorta(ultimaFecha) : '--';
+        if (elEstado) elEstado.textContent = 'Conectado: recibiendo asistencias en tiempo real';
+
+        if (elHistorial) {
+            const colores = { presente: '#2e7d32', tarde: '#e65100', justificada: '#0d47a1' };
+            const items = fechas.filter(function(f) { return (datos[f] && datos[f].estado) !== 'falta'; }).map(function(f) {
+                const r = datos[f] || {};
+                return { fecha: f, falta: false, estado: r.estado || 'presente', hora: r.hora || '' };
+            }).concat(faltas.map(function(f) {
+                const r = datos[f];
+                return { fecha: f, falta: true, estado: 'falta', hora: r && r.hora ? r.hora : '' };
+            })).sort(function(a, b) { return a.fecha < b.fecha ? 1 : -1; }).slice(0, 10);
+
+            elHistorial.innerHTML = items.map(function(it) {
+                const color = it.falta ? '#c62828' : (colores[it.estado] || '#2e7d32');
+                const titulo = it.falta ? 'Falta' : 'Asistencia registrada';
+                const detalle = it.falta ? 'sin asistencia ese día' : it.estado;
+                return `
+                    <div class="activity-item">
+                        <span class="activity-dot" style="background:${color};"></span>
+                        <div class="activity-content">
+                            <p><strong>${titulo}</strong> — ${escapeHtml(detalle)}</p>
+                            <span class="activity-time">${escapeHtml(it.fecha)}${it.hora ? ' · ' + escapeHtml(it.hora) : ''}</span>
                         </div>
-                    `;
-                }).join('');
-            }
-        } catch (err) {
-            console.error('Error cargando asistencias:', err);
-            if (elEstado) elEstado.textContent = 'No se pudieron cargar las asistencias';
+                    </div>
+                `;
+            }).join('');
         }
     }
 
@@ -5911,6 +5964,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
         });
 
         cargarAsistenciasSalon();
+        suscribirReconocimientos24h(function(n) { if (totalReconocimientos) totalReconocimientos.textContent = n; });
 
         const changePasswordBtn = document.getElementById('changePasswordBtn');
         if (changePasswordBtn) changePasswordBtn.addEventListener('click', openChangePasswordModal);
