@@ -4276,15 +4276,17 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     // acá como fallos intermitentes ("a veces funciona, a veces no").
     // 'gemini-3.7-flash' es, al momento de este cambio, la versión
     // estable más reciente y no tiene esa restricción.
-    const MODELO_IA_ACTUAL = 'gemini-3.7-flash';
+    const MODELO_IA_ACTUAL = 'gemini-1.5-flash';
 
     function crearModeloIA() {
         return getGenerativeModel(ai, {
             model: MODELO_IA_ACTUAL,
             systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION
+        }, {
+            apiKey: "AQ.Ab8RN6LaSNbfd7W1u0b6HUVBVSoJrfkGzL1bAj1pvIhejhMXMw"
         });
     }
-
+    
     // Pequeña espera entre reintentos (usada por enviarMensajeIAConReintento).
     function esperarMs(ms) {
         return new Promise(function(resolve) { setTimeout(resolve, ms); });
