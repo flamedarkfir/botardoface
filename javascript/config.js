@@ -4276,7 +4276,7 @@ No uses esta marca si el usuario no pidió navegar a ninguna parte.`;
     // acá como fallos intermitentes ("a veces funciona, a veces no").
     // 'gemini-3.7-flash' es, al momento de este cambio, la versión
     // estable más reciente y no tiene esa restricción.
-    const MODELO_IA_ACTUAL = 'gemini-1.5-flash';
+    const MODELO_IA_ACTUAL = 'gemini-2.5-flash';
 
     function crearModeloIA() {
         return getGenerativeModel(ai, {
